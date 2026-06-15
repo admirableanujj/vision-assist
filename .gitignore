@@ -1,0 +1,20 @@
+# Ignore local environment keys
+.env
+
+# Ignore Python cache and compiler files
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Ignore Docker storage & local YOLO downloads
+ollama_storage/
+*.pt
+
+# OS specific hidden files
+.DS_Store
+Thumbs.db
+
+#Any local system backup files
+*bkp*
+*BKP*

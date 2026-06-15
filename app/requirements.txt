@@ -1,0 +1,8 @@
+ultralytics>=8.0.0
+opencv-python-headless
+SpeechRecognition
+pyttsx3
+openai
+langchain
+ollama
+python-dotenv
