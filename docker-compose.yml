@@ -1,25 +1,25 @@
-version: '3.8'
-
 services:
   app:
     build:
-      context: ./app
+      context: ./apps
     container_name: vision_assist_app
     volumes:
       - ./app:/workspace
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://vision_assist_llm_local:11434
     ports:
-      - "8000:8000"
+      - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
     stdin_open: true
     tty: true
     depends_on:
       - ollama
+    devices:
+      - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
 
   ollama:
     image: ollama/ollama:latest
-    container_name: vision_assist_llm
+    container_name: vision_assist_llm_local
     ports:
       - "11434:11434"
     volumes:

@@ -1,8 +1,35 @@
-ultralytics>=8.0.0
-opencv-python-headless
-SpeechRecognition
-pyttsx3
-openai
+# ====================================================================
+# VisionAssistLFAI - Consolidated System Dependency Manifest
+# Installation: pip install -r requirements.txt
+# ====================================================================
+
+# 🖥️ Core Frontend Framework
+streamlit==1.42.0
+
+# 🎙️ Speech Processing & Native Audio Drivers
+SpeechRecognition==3.10.4
+pyaudio==0.2.14; sys_platform == 'win32' or sys_platform == 'darwin'
+pyttsx3==2.90
+
+# 👁️ Headless Edge Computer Vision
+ultralytics==8.2.0
+# opencv-python-headless==4.10.0.84
+
+# 🧠 LLM Orchestration, Routing & Agent Primitives
+openai==1.61.0
 langchain
-ollama
-python-dotenv
+langchain-openai
+ollama==0.6.2
+# openai-whisper
+# torch==2.7.1
+
+# 🎙️ Local Speech Processing Core
+faster-whisper==1.0.3
+gTTS==2.5.1  
+
+# ⚙️ Infrastructure & Communication Utility Layers
+python-dotenv==1.0.1
+requests==2.32.3
+pandas==2.2.1
+numpy==1.26.4
+# ffmpeg-python
