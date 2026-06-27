@@ -19,3 +19,9 @@ Thumbs.db
 *bkp*
 *BKP*
 *old*
+
+ignore any documentation files
+docs/
+
+ignore any audio files
+*.mp3
