@@ -28,6 +28,7 @@ from ml_engine import OllamaMLEngine
 from voice_engine.voice_stt import SpeechToTextConverter
 from voice_engine.voice_tts import TextToSpeechConverter
 from vision_engine import VisionTracker
+from ml_engine.query_classifier import QueryClassifier
 
 # SYSTEM CONFIGURATION FLAGS
 VISION_ENABLED = False  # Set to True to turn the camera tracking system back on
@@ -38,19 +39,21 @@ st.set_page_config(page_title="VisionAssist L-F-A-I", page_icon="🔍", layout="
 # Initialize our core engine abstractions inside Streamlit's resource cache
 @st.cache_resource
 def boot_system_core(enable_vision: bool):
+    brain = OllamaMLEngine()
     return (
-        OllamaMLEngine(), 
+        brain, 
         TextToSpeechConverter(speech_rate=165),
         SpeechToTextConverter(),  # Whisper Engine initialization
-        VisionTracker() if enable_vision else None
+        VisionTracker() if enable_vision else None,
+        QueryClassifier(brain.local_client)  # <-- CACHE THE ROUTER INSTANCE
     )
 
 # Pass our configuration flag down into the boot initialization
-ml_brain, speaker, whisper_stt, tracker = boot_system_core(VISION_ENABLED)
+ml_brain, speaker, whisper_stt, tracker, router = boot_system_core(VISION_ENABLED)
 
 
 
-st.title("🔍 VisionAssist — Lost & Found AI")
+st.title("🔍 FoundItGini — Lost & Found AI")
 st.caption("Never lose sight of what matters. Powered by Whisper, Computer Vision & Local LLM.")
 st.markdown("---")
 
@@ -81,7 +84,7 @@ with st.sidebar:
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("🎙️ Ask VisionAssist via Voice")
+    st.subheader("🎙️ Ask Gini via Voice")
     audio_file = st.audio_input("Click the microphone icon below to record your search command:")
 
     if audio_file is not None:
@@ -94,18 +97,40 @@ with col1:
             if transcribed_text and not transcribed_text.startswith("Error"):
                 st.success(f"🗣️ **Whisper Transcribed:** \"{transcribed_text}\"")
                 
-                with st.spinner("Analyzing text with local ML core..."):
-                    raw_tokens = ml_brain.tokenize_text(transcribed_text)
-                    if raw_tokens:
-                        st.caption(f"🔧 **Tokenizer Metrics (Token IDs):** {str(raw_tokens[:12])}...")
+                with st.spinner("Analyzing intent signatures..."):
+                    # 1. Instantly tap into your cached router layer
+                    classification = router.classify(transcribed_text)             
+                    intent = classification["intent"]
+                    payload = classification["payload"]
                     
-                    current_context = str(st.session_state.tracked_items)
-                    ml_response = ml_brain.generate_response(transcribed_text, current_context)
-                
-                st.info(f"🤖 **VisionCore-ML Response:** {ml_response}")
+                st.caption(f"🎯 **System Intent Routing Detected:** `{intent.upper()}`")
+
+                # 2. Dynamic Operational Execution Routes
+                if intent == "locate":
+                    with st.spinner("Searching tracking database matrix..."):
+                        current_context = str(st.session_state.tracked_items)
+                        ml_response = ml_brain.generate_response(transcribed_text, current_context)
+                        st.info(f"🤖 **VisionCore-ML [Locate Mode]:** {ml_response}")
+
+                elif intent == "note":
+                    # Placeholder route for note-taking feature expansions
+                    st.success(f"📝 **Note-Taking Module Triggered:** Logging payload: \"{payload}\"")
+                    ml_response = f"I've noted that down for you: {payload}"
+
+                elif intent == "alarm":
+                    # Placeholder route for clock/scheduling activations
+                    st.warning(f"⏰ **Alarm/Scheduling Triggered:** Setting event parameters for: \"{payload}\"")
+                    ml_response = f"Handling your scheduling request for {payload} now."
+
+                else: # intent == "general"
+                    with st.spinner("Engaging LangChain cloud backup pipelines for general inquiry..."):
+                        # If it's a general question or weather request, let the cloud fallback model answer it
+                        ml_response = ml_brain.generate_cloud_response(transcribed_text)
+                        st.info(f"🌐 **Cloud Hybrid Assistant [General Mode]:** {ml_response}")
+
+                # 3. Deliver Audio back to user browser
                 audio_output_path = speaker.execute(ml_response)
                 if audio_output_path and os.path.exists(audio_output_path):
-                    # This instructs your local Chrome/Edge browser to play the voice response directly!
                     st.audio(audio_output_path, format="audio/mp3", autoplay=True)
             else:
                 # Intercept API/Key omissions gracefully directly inside UI space
