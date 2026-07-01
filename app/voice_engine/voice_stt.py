@@ -23,6 +23,8 @@ __license__ = "MIT"
 __version__ = "1.0.1"
 import os
 from dotenv import load_dotenv
+from openai import OpenAI
+from faster_whisper import WhisperModel
 from .voice_base import VoiceEngineAC
 
 load_dotenv()
@@ -44,13 +46,11 @@ class SpeechToTextConverter(VoiceEngineAC):
         api_key = os.getenv("OPENAI_API_KEY")
         
         if api_key:
-            from openai import OpenAI
             self.client = OpenAI(api_key=api_key)
             print("[INFO] Whisper STT initialized via Cloud API Wrapper.")
         else:
             print("[INFO] No cloud API key detected. Bootstrapping fully offline Faster-Whisper layer...")
             try:
-                from faster_whisper import WhisperModel
                 # Using the optimized "tiny" or "base" model for fast, low-overhead CPU calculations
                 self.local_model = WhisperModel("tiny", device="cpu", compute_type="int8")
                 print("[INFO] Local offline Whisper Core successfully mapped to CPU hardware.")
