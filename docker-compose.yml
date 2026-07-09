@@ -1,7 +1,7 @@
 services:
   app:
     build:
-      context: ./apps
+      context: ./app
     container_name: vision_assist_app
     volumes:
       - ./app:/workspace
