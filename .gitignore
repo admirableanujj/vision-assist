@@ -20,8 +20,5 @@ Thumbs.db
 *BKP*
 *old*
 
-ignore any documentation files
-docs/
-
 ignore any audio files
 *.mp3
