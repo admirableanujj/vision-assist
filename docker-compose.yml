@@ -14,8 +14,9 @@ services:
     tty: true
     depends_on:
       - ollama
-    devices:
-      - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
+      - postgres
+    #devices:
+    #  - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
 
   ollama:
     image: ollama/ollama:latest
@@ -25,5 +26,24 @@ services:
     volumes:
       - ollama_storage:/root/.ollama
 
+  postgres:
+    image: postgres:16-alpine  # lightweight Alpine-based Postgres image
+    container_name: vision_assist_db
+    hostname: db  # reachable as "db" on the compose network
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_storage:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - db
+
 volumes:
   ollama_storage:
+  postgres_storage:
