@@ -39,23 +39,48 @@ Add dependencies to `app/requirements.txt` and rebuild with `docker-compose buil
 
 ## Architecture
 
-### Module Layout
+### Repository Layout
 
 ```
-app/
-├── app.py                        # Streamlit UI + pipeline orchestration
-├── ml_engine/
-│   ├── ml_base_engine.py         # ABC: tokenize_text(), generate_response()
-│   ├── ml_engine.py              # OllamaMLEngine — local LLM + OpenAI cloud fallback
-│   └── query_classifier.py       # Intent routing via Ollama structured JSON
-├── voice_engine/
-│   ├── voice_base.py             # ABC: initialize_engine(), execute()
-│   ├── voice_stt.py              # Whisper (OpenAI API) → Faster-Whisper (offline fallback)
-│   └── voice_tts.py              # gTTS → MP3 → browser autoplay
-└── vision_engine/
-    ├── vision_base.py            # ABC: scan_frame()
-    └── vision_engine.py          # YOLOVisionEngine (stubbed) + FallbackVisionEngine (random mock)
+vision-assist/
+├── app/                          # All runnable application code
+│   ├── app.py                    # Streamlit UI + pipeline orchestration
+│   ├── ml_engine/
+│   │   ├── ml_base_engine.py     # ABC: tokenize_text(), generate_response()
+│   │   ├── ml_engine.py          # OllamaMLEngine — local LLM + OpenAI cloud fallback
+│   │   └── query_classifier.py   # Intent routing via Ollama structured JSON
+│   ├── voice_engine/
+│   │   ├── voice_base.py         # ABC: initialize_engine(), execute()
+│   │   ├── voice_stt.py          # Whisper (OpenAI API) → Faster-Whisper (offline fallback)
+│   │   └── voice_tts.py          # gTTS → MP3 → browser autoplay
+│   └── vision_engine/
+│       ├── vision_base.py        # ABC: scan_frame()
+│       └── vision_engine.py      # YOLOVisionEngine (stubbed) + FallbackVisionEngine (random mock)
+├── Database/
+│   └── DatabaseScript_PostgreSQL.sql   # Full PostgreSQL schema (13 tables)
+└── Documents/
+    ├── VisionAssist_Architecture_UML.pptx
+    ├── VisionAssist_Technical_Guide.docx
+    └── diagram_assets/           # 14 UML diagram PNGs
 ```
+
+### Database Schema (`Database/DatabaseScript_PostgreSQL.sql`)
+
+13 tables covering the full domain. Key tables Shubham's DB layer must implement as SQLAlchemy models:
+
+| Table | Purpose |
+|---|---|
+| `users` | User accounts (guid, email, role FK, is_active) |
+| `user_login` | Hashed passwords (separate from users) |
+| `roles` / `permission` | RBAC — role-based access control |
+| `items` | Tracked belongings (owner FK, object_class, home_zone FK) |
+| `cameras` | Camera sources (owner FK, location, source URL) |
+| `zones` | Bounding-box regions within a camera frame |
+| `detections` | YOLO detection events (camera FK, confidence, bbox, timestamp) |
+| `reminders` | Scheduled reminder records |
+| `alerts` | Real-time breach/zone alert log |
+| `query_logs` | LLM query trace (intent, found, latency_ms) |
+| `item_embeddings` | Vector embeddings per item (for ChromaDB parity) |
 
 ### Request Flow
 
@@ -94,7 +119,7 @@ Cloud fallback activates only if `OPENAI_API_KEY` is set in `.env`.
 2. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
 3. **Ollama hostname** — `OllamaMLEngine` defaults to `http://vision_assist_llm_local:11434` but the Docker container is named `vision_assist_llm`. Update the host or the compose service name to match.
 4. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
-5. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. DB layer not yet implemented.
+5. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but SQLAlchemy ORM layer is not yet written or wired to the app.
 6. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
 ## Pending Work (Shubham — Milestone 3)
@@ -102,7 +127,7 @@ Cloud fallback activates only if `OPENAI_API_KEY` is set in `.env`.
 See `docs/milestone3-overview.md` for full details and rubric alignment.
 
 1. **Implement `generate_cloud_response()`** in `ml_engine.py` — the missing general Q&A method
-2. **DB layer** — SQLAlchemy models + SQLite to persist item sightings across sessions (replacing `st.session_state`)
+2. **DB layer** — Write SQLAlchemy ORM models from `Database/DatabaseScript_PostgreSQL.sql` schema; use SQLite for dev. Priority tables: `items`, `detections`, `query_logs`. Replace `st.session_state.tracked_items` with DB-backed queries.
 3. **Fix the 3 bugs listed above** before any new feature work
 
-All design docs are in `docs/` — start with `docs/links.md` for all project references.
+Design assets (UML diagrams, technical guide) are in `Documents/`. All markdown design docs are in `docs/` — start with `docs/links.md` for all project references.
