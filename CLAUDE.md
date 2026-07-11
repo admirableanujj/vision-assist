@@ -90,7 +90,7 @@ vision-assist/
 
 ### Database Schema (`Database/DatabaseScript_PostgreSQL.sql`)
 
-13 tables covering the full domain. Key tables Shubham's DB layer must implement as SQLAlchemy models:
+13 tables covering the full domain. Not yet wired to the app (see Known Issues).
 
 | Table | Purpose |
 |---|---|
@@ -135,19 +135,11 @@ User speaks → st.audio_input()
 | General Q&A | `generate_general_response()` on "general" intent | LangChain + OpenAI gpt-4o-mini, falls back to Ollama (llama3) if no API key or on cloud failure |
 | Offline STT | No `OPENAI_API_KEY` | Faster-Whisper "tiny" CPU model |
 
-## Known Issues (as of July 2026)
+## Known Issues
 
 1. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
 2. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
-3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but SQLAlchemy ORM layer is not yet written or wired to the app.
+3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
 4. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
-## Pending Work (Shubham — Milestone 3)
-
-See `docs/milestone3-overview.md` for full details and rubric alignment.
-
-1. ~~Implement `generate_general_response()`~~ — done: OpenAI cloud path + Ollama fallback, covered by `app/tests/test_ml_engine.py`
-2. **DB layer** — Write SQLAlchemy ORM models from `Database/DatabaseScript_PostgreSQL.sql` schema; use SQLite for dev. Priority tables: `items`, `detections`, `query_logs`. Replace `st.session_state.tracked_items` with DB-backed queries.
-3. **Fix the remaining known issues** listed above before any new feature work
-
-Design assets (UML diagrams, technical guide) are in `Documents/`. All markdown design docs are in `docs/` — start with `docs/links.md` for all project references.
+Design assets (UML diagrams, technical guide) are in `Documents/`. Markdown design docs are in `docs/`.
