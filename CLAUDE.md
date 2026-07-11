@@ -114,7 +114,7 @@ User speaks → st.audio_input()
   → QueryClassifier.classify()            # Ollama llama3 → JSON intent: locate/note/alarm/general
   → OllamaMLEngine.generate_response()   # for "locate" intent (uses tracking context)
   OR
-  → OllamaMLEngine.generate_cloud_response()  # for "general" intent (OpenAI fallback)
+  → OllamaMLEngine.generate_general_response()  # for "general" intent (OpenAI, falls back to Ollama)
   → TextToSpeechConverter.execute()       # gTTS → response_vocal.mp3
   → st.audio(..., autoplay=True)
 ```
@@ -122,7 +122,7 @@ User speaks → st.audio_input()
 ### Key Design Patterns
 
 - Every engine module follows **ABC → concrete class**: `BaseMLEngine`, `BaseVisionEngine`, `VoiceEngineAC`
-- `OllamaMLEngine` connects to Ollama at `http://vision_assist_llm_local:11434` — this must match the Docker service hostname
+- `OllamaMLEngine` resolves its host from the `OLLAMA_HOST` env var (set by docker-compose), falling back to `http://vision_assist_llm_local:11434` if unset
 - `QueryClassifier` uses `format="json"` and `temperature=0.0` in Ollama to force deterministic structured output
 - All engines are initialized once via `@st.cache_resource` in `app.py` — avoid stateful side effects in constructors
 - `VISION_ENABLED = False` in `app.py` disables camera scanning; set to `True` to enable
@@ -132,26 +132,22 @@ User speaks → st.audio_input()
 | Path | Trigger | Backend |
 |---|---|---|
 | Local inference | `generate_response()` on "locate" intent | Ollama (llama3) |
-| Cloud fallback | `generate_cloud_response()` on "general" intent | LangChain + OpenAI gpt-4o-mini |
+| General Q&A | `generate_general_response()` on "general" intent | LangChain + OpenAI gpt-4o-mini, falls back to Ollama (llama3) if no API key or on cloud failure |
 | Offline STT | No `OPENAI_API_KEY` | Faster-Whisper "tiny" CPU model |
-
-Cloud fallback activates only if `OPENAI_API_KEY` is set in `.env`.
 
 ## Known Issues (as of July 2026)
 
-1. **`generate_cloud_response()` is undefined** — `app.py:128` calls it but `OllamaMLEngine` has no such method → `AttributeError` on any "general" intent query.
-2. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
-3. **Ollama hostname** — `OllamaMLEngine` defaults to `http://vision_assist_llm_local:11434` but the Docker container is named `vision_assist_llm`. Update the host or the compose service name to match.
-4. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
-5. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but SQLAlchemy ORM layer is not yet written or wired to the app.
-6. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
+1. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
+2. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
+3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but SQLAlchemy ORM layer is not yet written or wired to the app.
+4. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
 ## Pending Work (Shubham — Milestone 3)
 
 See `docs/milestone3-overview.md` for full details and rubric alignment.
 
-1. **Implement `generate_cloud_response()`** in `ml_engine.py` — the missing general Q&A method
+1. ~~Implement `generate_general_response()`~~ — done: OpenAI cloud path + Ollama fallback, covered by `app/tests/test_ml_engine.py`
 2. **DB layer** — Write SQLAlchemy ORM models from `Database/DatabaseScript_PostgreSQL.sql` schema; use SQLite for dev. Priority tables: `items`, `detections`, `query_logs`. Replace `st.session_state.tracked_items` with DB-backed queries.
-3. **Fix the 3 bugs listed above** before any new feature work
+3. **Fix the remaining known issues** listed above before any new feature work
 
 Design assets (UML diagrams, technical guide) are in `Documents/`. All markdown design docs are in `docs/` — start with `docs/links.md` for all project references.

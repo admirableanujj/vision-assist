@@ -125,7 +125,7 @@ with col1:
                 else: # intent == "general"
                     with st.spinner("Engaging LangChain cloud backup pipelines for general inquiry..."):
                         # If it's a general question or weather request, let the cloud fallback model answer it
-                        ml_response = ml_brain.generate_cloud_response(transcribed_text)
+                        ml_response = ml_brain.generate_general_response(transcribed_text)
                         st.info(f"🌐 **Cloud Hybrid Assistant [General Mode]:** {ml_response}")
 
                 # 3. Deliver Audio back to user browser

@@ -138,7 +138,7 @@ class OllamaMLEngine(BaseMLEngine):
             
             return "VisionAssist Core is currently recovering or adjusting container system links."
 
-    def generate_cloud_response(self, user_text: str) -> str:
+    def generate_general_response(self, user_text: str) -> str:
         """
         Handles general knowledge queries outside the lost-item domain.
         Primary path: OpenAI gpt-4o-mini via LangChain (requires OPENAI_API_KEY).

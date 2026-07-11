@@ -36,7 +36,7 @@ class BaseMLEngine(ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def generate_cloud_response(self, user_text: str) -> str:
+    def generate_general_response(self, user_text: str) -> str:
         """
         Handles general knowledge queries outside the lost-item domain.
 

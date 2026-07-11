@@ -33,12 +33,12 @@ def classifier():
 # ─── ABC Contract ──────────────────────────────────────────────────────────────
 
 class TestABCContract:
-    def test_subclass_missing_generate_cloud_response_raises_type_error(self):
-        """The ABC must not allow instantiation without generate_cloud_response."""
+    def test_subclass_missing_generate_general_response_raises_type_error(self):
+        """The ABC must not allow instantiation without generate_general_response."""
         class Incomplete(BaseMLEngine):
             def tokenize_text(self, text): return []
             def generate_response(self, text, ctx): return ""
-            # generate_cloud_response intentionally absent
+            # generate_general_response intentionally absent
 
         with pytest.raises(TypeError):
             Incomplete()
@@ -139,9 +139,9 @@ class TestGenerateResponse:
         assert len(result) > 0
 
 
-# ─── generate_cloud_response ───────────────────────────────────────────────────
+# ─── generate_general_response ───────────────────────────────────────────────────
 
-class TestGenerateCloudResponse:
+class TestGenerateGeneralResponse:
     def test_uses_langchain_when_openai_key_is_set(self, engine):
         """Cloud path: LangChain invoke is called and its response is returned."""
         eng, _ = engine
@@ -150,7 +150,7 @@ class TestGenerateCloudResponse:
         eng.fallback_enabled = True
         eng.fallback_llm = mock_llm
 
-        result = eng.generate_cloud_response("What is the capital of France?")
+        result = eng.generate_general_response("What is the capital of France?")
 
         assert result == "Paris is the capital of France."
         mock_llm.invoke.assert_called_once()
@@ -161,7 +161,7 @@ class TestGenerateCloudResponse:
         eng.fallback_enabled = False
         mock_client.generate.return_value = {"response": "Water boils at 100°C."}
 
-        result = eng.generate_cloud_response("At what temperature does water boil?")
+        result = eng.generate_general_response("At what temperature does water boil?")
 
         assert result == "Water boils at 100°C."
         mock_client.generate.assert_called_once()
@@ -175,7 +175,7 @@ class TestGenerateCloudResponse:
         eng.fallback_llm = mock_llm
         mock_client.generate.return_value = {"response": "Local fallback answer."}
 
-        result = eng.generate_cloud_response("Some question?")
+        result = eng.generate_general_response("Some question?")
 
         assert result == "Local fallback answer."
         mock_client.generate.assert_called_once()
@@ -186,7 +186,7 @@ class TestGenerateCloudResponse:
         eng.fallback_enabled = False
         mock_client.generate.side_effect = Exception("Connection refused")
 
-        result = eng.generate_cloud_response("Some question?")
+        result = eng.generate_general_response("Some question?")
 
         assert isinstance(result, str)
         assert len(result) > 0
@@ -197,7 +197,7 @@ class TestGenerateCloudResponse:
         eng.fallback_enabled = False
         mock_client.generate.return_value = {"response": "  Trimmed answer.  "}
 
-        result = eng.generate_cloud_response("Question?")
+        result = eng.generate_general_response("Question?")
 
         assert result == "Trimmed answer."
 
