@@ -37,6 +37,30 @@ python test_env.py     # quick CV matrix check
 
 Add dependencies to `app/requirements.txt` and rebuild with `docker-compose build app`.
 
+## Testing
+
+Tests live in `app/tests/`. Run from the `app/` directory:
+
+```bash
+# Run with coverage report (80% gate enforced)
+python3 -m pytest -v
+
+# Inside Docker container
+docker exec -it vision_assist_app bash -c "cd /workspace && python3 -m pytest -v"
+```
+
+Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine`. Extend the `--cov` flag as new modules gain tests.
+
+Tests run locally without Docker: `app/tests/conftest.py` stubs the Docker-only deps (`ollama`, `langchain_openai`, `dotenv`) via `sys.modules` so the suite works on any machine with `pytest` and `pytest-cov` installed.
+
+### Pre-commit hook
+
+A pre-commit hook in `.githooks/pre-commit` blocks commits when Python files are staged and tests fail or coverage drops below 80%. First-time setup (one-off per clone):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Architecture
 
 ### Repository Layout
