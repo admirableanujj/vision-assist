@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     espeak \
     espeak-ng \
     alsa-utils \
+    postgresql-client \ 
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade packaging pipeline tools

@@ -26,7 +26,27 @@ Add your key to `.env`:
 
 ```
 OPENAI_API_KEY=sk-...
+
+# PostgreSQL credentials
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=changeme
+POSTGRES_DB=vision_assist
 ```
+
+> **Note:** The Postgres credentials above are only applied when the database is
+> **first initialized**. If you change `POSTGRES_USER`, `POSTGRES_PASSWORD`, or
+> `POSTGRES_DB` after the `postgres_storage` volume already exists, the new
+> values are ignored and you'll get `password authentication failed`. Wipe the
+> volume to re-initialize with the new credentials:
+>
+> ```bash
+> docker-compose down
+> docker volume rm vision-assist_postgres_storage   # confirm name: docker volume ls | grep postgres
+> docker-compose up -d
+> ```
+>
+> To change credentials **without** losing data, see
+> [`docs/issues/postgres-password-auth-failed.md`](docs/issues/postgres-password-auth-failed.md).
 
 ### 3. Build and start the containers
 
