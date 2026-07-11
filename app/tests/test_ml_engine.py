@@ -81,7 +81,31 @@ class TestHostnameResolution:
              patch("langchain_openai.ChatOpenAI", mock_llm_cls):
             eng = OllamaMLEngine()
         assert eng.fallback_enabled is True
+        assert eng.fallback_llm is not None
         mock_llm_cls.assert_called_once_with(model="gpt-4o-mini", temperature=0.1)
+
+    def test_fallback_disabled_when_chatopenai_init_raises(self):
+        """
+        If ChatOpenAI() construction fails (bad key format, package issue, etc.),
+        fallback_enabled must stay False so callers never see fallback_enabled=True
+        with a missing fallback_llm (which would raise AttributeError downstream).
+        """
+        mock_client = MagicMock()
+        mock_llm_cls = MagicMock(side_effect=Exception("invalid api key"))
+        with patch("ml_engine.ml_engine.ollama.Client", return_value=mock_client), \
+             patch.dict(os.environ, {"OPENAI_API_KEY": "sk-bad"}, clear=True), \
+             patch("langchain_openai.ChatOpenAI", mock_llm_cls):
+            eng = OllamaMLEngine()
+
+        assert eng.fallback_enabled is False
+        assert eng.fallback_llm is None
+
+        # generate_general_response must not raise AttributeError — it should
+        # go straight to the local Ollama path instead.
+        eng.local_client = mock_client
+        mock_client.generate.return_value = {"response": "Local answer."}
+        result = eng.generate_general_response("Some question?")
+        assert result == "Local answer."
 
 
 # ─── tokenize_text ─────────────────────────────────────────────────────────────

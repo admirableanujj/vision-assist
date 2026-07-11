@@ -45,12 +45,19 @@ class OllamaMLEngine(BaseMLEngine):
         print(f"[INFO] OllamaMLEngine natively bound over SDK client via {self.host}")
         
         # Optional LangChain / OpenAI Fallback Integration
-        self.fallback_enabled = os.getenv("OPENAI_API_KEY") is not None
-        if self.fallback_enabled:
-            from langchain_openai import ChatOpenAI
-            # Initialize a highly concise cloud fallback engine for latency insurance
-            self.fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
-            print("[INFO] LangChain OpenAI cloud hybrid fallback engine securely configured.")
+        self.fallback_llm = None
+        self.fallback_enabled = False
+        if os.getenv("OPENAI_API_KEY") is not None:
+            try:
+                from langchain_openai import ChatOpenAI
+                # Initialize a highly concise cloud fallback engine for latency insurance
+                self.fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+                self.fallback_enabled = True
+                print("[INFO] LangChain OpenAI cloud hybrid fallback engine securely configured.")
+            except Exception as e:
+                # Keep fallback_enabled/fallback_llm in sync so callers never see
+                # fallback_enabled=True with a missing fallback_llm.
+                print(f"[WARN] LangChain OpenAI fallback failed to initialize: {e}. Continuing with local Ollama only.")
 
     # def tokenize_text(self, input_text: str) -> list:
     #     """
