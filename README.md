@@ -140,13 +140,37 @@ Models are persisted in the `ollama_storage` Docker volume across restarts.
 ## Running the App
 
 ```bash
-docker exec -it vision_assist_app python main.py
+# Access the UI at http://localhost:8501
+docker exec -it vision_assist_app streamlit run app.py --server.port=8501 --server.address=0.0.0.0
 ```
 
 Or drop into an interactive shell:
 
 ```bash
 docker exec -it vision_assist_app bash
+```
+
+## Running Tests
+
+Tests run locally without Docker (deps are stubbed automatically):
+
+```bash
+cd app
+python3 -m pytest -v   # runs with 80% coverage gate
+```
+
+Or inside the container:
+
+```bash
+docker exec -it vision_assist_app bash -c "cd /workspace && python3 -m pytest -v"
+```
+
+### Pre-commit hook (one-time setup per clone)
+
+Commits that touch Python files are blocked if tests fail or coverage drops below 80%:
+
+```bash
+git config core.hooksPath .githooks
 ```
 
 ## Services
@@ -162,11 +186,14 @@ docker exec -it vision_assist_app bash
 
 | Component | Library |
 |---|---|
+| Frontend | Streamlit |
+| Speech input | OpenAI Whisper API / Faster-Whisper (offline) |
+| Speech output | gTTS → MP3 → browser autoplay |
 | Object detection | YOLOv8 (ultralytics), OpenCV |
 | Speech input | SpeechRecognition |
 | Speech output | pyttsx3 |
 | Cloud LLM | OpenAI API |
 | Local LLM | Ollama |
 | Orchestration | LangChain |
-| Vector memory | ChromaDB, Qdrant |
+| Vector memory | Qdrant |
 | Relational store | PostgreSQL |

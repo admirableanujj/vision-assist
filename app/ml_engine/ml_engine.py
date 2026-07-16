@@ -34,8 +34,10 @@ class OllamaMLEngine(BaseMLEngine):
     Enhanced concrete implementation of BaseMLEngine natively utilizing the Ollama SDK 
     with an integrated LangChain + OpenAI cloud fallback framework for voice classification.
     """
-    def __init__(self, host: str = "http://vision_assist_llm_local:11434", default_model: str = "llama3"):
-        self.host = host
+    def __init__(self, host: str = None, default_model: str = "llama3"):
+        # Prefer the OLLAMA_HOST env var (set by docker-compose) so the host is
+        # configurable without touching code. Fall back to the container default.
+        self.host = host or os.getenv("OLLAMA_HOST", "http://vision_assist_llm_local:11434")
         self.model = default_model
         
         # Configure client bindings for the official Ollama SDK
@@ -43,12 +45,19 @@ class OllamaMLEngine(BaseMLEngine):
         print(f"[INFO] OllamaMLEngine natively bound over SDK client via {self.host}")
         
         # Optional LangChain / OpenAI Fallback Integration
-        self.fallback_enabled = os.getenv("OPENAI_API_KEY") is not None
-        if self.fallback_enabled:
-            from langchain_openai import ChatOpenAI
-            # Initialize a highly concise cloud fallback engine for latency insurance
-            self.fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
-            print("[INFO] LangChain OpenAI cloud hybrid fallback engine securely configured.")
+        self.fallback_llm = None
+        self.fallback_enabled = False
+        if os.getenv("OPENAI_API_KEY") is not None:
+            try:
+                from langchain_openai import ChatOpenAI
+                # Initialize a highly concise cloud fallback engine for latency insurance
+                self.fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+                self.fallback_enabled = True
+                print("[INFO] LangChain OpenAI cloud hybrid fallback engine securely configured.")
+            except Exception as e:
+                # Keep fallback_enabled/fallback_llm in sync so callers never see
+                # fallback_enabled=True with a missing fallback_llm.
+                print(f"[WARN] LangChain OpenAI fallback failed to initialize: {e}. Continuing with local Ollama only.")
 
     # def tokenize_text(self, input_text: str) -> list:
     #     """
@@ -135,3 +144,40 @@ class OllamaMLEngine(BaseMLEngine):
                     return f"System Orchestration Failure. Cloud chain also unreachable: {cloud_error}"
             
             return "VisionAssist Core is currently recovering or adjusting container system links."
+
+    def generate_general_response(self, user_text: str) -> str:
+        """
+        Handles general knowledge queries outside the lost-item domain.
+        Primary path: OpenAI gpt-4o-mini via LangChain (requires OPENAI_API_KEY).
+        Fallback path: local Ollama inference when no API key is present.
+        """
+        system_prompt = (
+            "You are VisionAssist, a helpful voice assistant. "
+            "Answer the user's question clearly and concisely in one or two sentences. "
+            "Do not reference lost items or object tracking unless the user asks about them."
+        )
+
+        # Path A: Cloud LLM via LangChain (OpenAI key present)
+        if self.fallback_enabled:
+            try:
+                from langchain_core.messages import SystemMessage, HumanMessage
+                messages = [
+                    SystemMessage(content=system_prompt),
+                    HumanMessage(content=user_text),
+                ]
+                cloud_response = self.fallback_llm.invoke(messages)
+                return cloud_response.content.strip()
+            except Exception as cloud_err:
+                print(f"[WARN] Cloud LLM failed: {cloud_err}. Falling back to local Ollama...")
+
+        # Path B: Local Ollama (no API key, or cloud failed)
+        try:
+            response = self.local_client.generate(
+                model=self.model,
+                prompt=f"{system_prompt}\n\nUser: {user_text}\nAssistant:",
+                options={"temperature": 0.4, "stop": ["\n\n"]},
+            )
+            return response.get("response", "").strip()
+        except Exception as local_err:
+            print(f"[ERROR] Local Ollama general response failed: {local_err}")
+            return "I'm unable to answer right now. Please check that the Ollama container is running."

@@ -4,62 +4,142 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Vision-Assist is an AI-powered voice-vision assistant that combines:
-- **Object detection** via YOLOv8 (ultralytics) and OpenCV
-- **Speech I/O** via SpeechRecognition and pyttsx3
-- **LLM backends**: OpenAI API (cloud) and Ollama (local, `http://ollama:11434`)
-- **Vector memory** via ChromaDB
-- **Orchestration** via LangChain
+VisionAssist (Lost & Found AI) is a Streamlit web app that lets users locate misplaced belongings via voice commands and computer vision. The pipeline is: voice → Whisper STT → Ollama intent classifier → LLM response → gTTS audio playback. YOLO camera scanning is implemented but currently disabled.
 
-All application code lives in `app/`. The entry point is `app/main.py`.
+**Entry point:** `app/app.py` (`app/main.py` is empty — ignore it)
 
 ## Development Environment
 
-The project runs entirely inside Docker. There is **no local Python environment** — all commands should be run inside the container.
+Two Docker services (`docker-compose.yml`):
 
-### Start the environment
+| Service | Container | Port | Role |
+|---|---|---|---|
+| `app` | `vision_assist_app` | 8501 | Streamlit app |
+| `ollama` | `vision_assist_llm` | 11434 | Local LLM (llama3) |
+
+> **Note:** `docker-compose.yml` maps port 8000 but Streamlit runs on 8501. Use 8501 to access the UI.
 
 ```bash
-# Requires a .env file with OPENAI_API_KEY=sk-...
-docker-compose up -d
+# Requires .env with OPENAI_API_KEY=sk-...
+docker-compose up -d --build
 docker exec -it vision_assist_app bash
+
+# Inside container — run the app
+streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+
+# Pull the local LLM (first time only)
+docker exec -it vision_assist_llm ollama pull llama3
+
+# Verify environment
+python verify_env.py   # PyTorch, OpenCV, YOLO, ChromaDB, API key
+python test_env.py     # quick CV matrix check
 ```
 
-### Verify the environment (inside container)
+Add dependencies to `app/requirements.txt` and rebuild with `docker-compose build app`.
+
+## Testing
+
+Tests live in `app/tests/`. Run from the `app/` directory:
 
 ```bash
-python verify_env.py   # full diagnostics: PyTorch, OpenCV, YOLO, ChromaDB, API key
-python test_env.py     # quick CV matrix sanity check
+# Run with coverage report (80% gate enforced)
+python3 -m pytest -v
+
+# Inside Docker container
+docker exec -it vision_assist_app bash -c "cd /workspace && python3 -m pytest -v"
 ```
 
-### Install a new dependency
+Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine`. Extend the `--cov` flag as new modules gain tests.
 
-Add to `app/requirements.txt`, then rebuild:
+Tests run locally without Docker: `app/tests/conftest.py` stubs the Docker-only deps (`ollama`, `langchain_openai`, `dotenv`) via `sys.modules` so the suite works on any machine with `pytest` and `pytest-cov` installed.
+
+### Pre-commit hook
+
+A pre-commit hook in `.githooks/pre-commit` blocks commits when Python files are staged and tests fail or coverage drops below 80%. First-time setup (one-off per clone):
+
 ```bash
-docker-compose build app
+git config core.hooksPath .githooks
 ```
 
 ## Architecture
 
-Two Docker services defined in `docker-compose.yml`:
+### Repository Layout
 
-| Service | Container | Role |
+```
+vision-assist/
+├── app/                          # All runnable application code
+│   ├── app.py                    # Streamlit UI + pipeline orchestration
+│   ├── ml_engine/
+│   │   ├── ml_base_engine.py     # ABC: tokenize_text(), generate_response()
+│   │   ├── ml_engine.py          # OllamaMLEngine — local LLM + OpenAI cloud fallback
+│   │   └── query_classifier.py   # Intent routing via Ollama structured JSON
+│   ├── voice_engine/
+│   │   ├── voice_base.py         # ABC: initialize_engine(), execute()
+│   │   ├── voice_stt.py          # Whisper (OpenAI API) → Faster-Whisper (offline fallback)
+│   │   └── voice_tts.py          # gTTS → MP3 → browser autoplay
+│   └── vision_engine/
+│       ├── vision_base.py        # ABC: scan_frame()
+│       └── vision_engine.py      # YOLOVisionEngine (stubbed) + FallbackVisionEngine (random mock)
+├── Database/
+│   └── DatabaseScript_PostgreSQL.sql   # Full PostgreSQL schema (13 tables)
+└── Documents/
+    ├── VisionAssist_Architecture_UML.pptx
+    ├── VisionAssist_Technical_Guide.docx
+    └── diagram_assets/           # 14 UML diagram PNGs
+```
+
+### Database Schema (`Database/DatabaseScript_PostgreSQL.sql`)
+
+13 tables covering the full domain. Not yet wired to the app (see Known Issues).
+
+| Table | Purpose |
+|---|---|
+| `users` | User accounts (guid, email, role FK, is_active) |
+| `user_login` | Hashed passwords (separate from users) |
+| `roles` / `permission` | RBAC — role-based access control |
+| `items` | Tracked belongings (owner FK, object_class, home_zone FK) |
+| `cameras` | Camera sources (owner FK, location, source URL) |
+| `zones` | Bounding-box regions within a camera frame |
+| `detections` | YOLO detection events (camera FK, confidence, bbox, timestamp) |
+| `reminders` | Scheduled reminder records |
+| `alerts` | Real-time breach/zone alert log |
+| `query_logs` | LLM query trace (intent, found, latency_ms) |
+| `item_embeddings` | Vector embeddings per item (for ChromaDB parity) |
+
+### Request Flow
+
+```
+User speaks → st.audio_input()
+  → SpeechToTextConverter.execute()       # Whisper cloud or local Faster-Whisper
+  → QueryClassifier.classify()            # Ollama llama3 → JSON intent: locate/note/alarm/general
+  → OllamaMLEngine.generate_response()   # for "locate" intent (uses tracking context)
+  OR
+  → OllamaMLEngine.generate_general_response()  # for "general" intent (OpenAI, falls back to Ollama)
+  → TextToSpeechConverter.execute()       # gTTS → response_vocal.mp3
+  → st.audio(..., autoplay=True)
+```
+
+### Key Design Patterns
+
+- Every engine module follows **ABC → concrete class**: `BaseMLEngine`, `BaseVisionEngine`, `VoiceEngineAC`
+- `OllamaMLEngine` resolves its host from the `OLLAMA_HOST` env var (set by docker-compose), falling back to `http://vision_assist_llm_local:11434` if unset
+- `QueryClassifier` uses `format="json"` and `temperature=0.0` in Ollama to force deterministic structured output
+- All engines are initialized once via `@st.cache_resource` in `app.py` — avoid stateful side effects in constructors
+- `VISION_ENABLED = False` in `app.py` disables camera scanning; set to `True` to enable
+
+### LLM Strategy
+
+| Path | Trigger | Backend |
 |---|---|---|
-| `app` | `vision_assist_app` | Python app (port 8000) |
-| `ollama` | `vision_assist_llm` | Local LLM server (port 11434) |
+| Local inference | `generate_response()` on "locate" intent | Ollama (llama3) |
+| General Q&A | `generate_general_response()` on "general" intent | LangChain + OpenAI gpt-4o-mini, falls back to Ollama (llama3) if no API key or on cloud failure |
+| Offline STT | No `OPENAI_API_KEY` | Faster-Whisper "tiny" CPU model |
 
-The `ollama_storage` named volume persists downloaded model weights across rebuilds.
+## Known Issues
 
-### Two-stage Docker build (`app/Dockerfile`)
+1. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
+2. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
+3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
+4. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
-- **Stage 1 (`ai_base`):** Installs heavy, slow-changing deps (PyTorch CPU, OpenCV, ChromaDB, ultralytics). This layer is cached and rarely rebuilt.
-- **Stage 2 (`ai_dev`):** Copies `requirements.txt`, installs remaining deps, pre-downloads `yolov8n.pt`. This is the active dev layer.
-
-The `./app` directory is bind-mounted to `/workspace` inside the container, so code changes take effect immediately without rebuilding.
-
-## Key Constraints
-
-- **CPU-only PyTorch** — the image installs the `--index-url https://download.pytorch.org/whl/cpu` build. No GPU in this environment.
-- **Headless OpenCV** (`opencv-python-headless`) — no display/GUI available inside Docker; use file I/O or numpy arrays for image data.
-- **YOLO model:** `yolov8n.pt` (nano) is pre-cached in the image at build time.
-- **Ollama models** must be pulled manually after first `docker-compose up` if not already in the volume: `docker exec vision_assist_llm ollama pull <model>`.
+Design assets (UML diagrams, technical guide) are in `Documents/`. Markdown design docs are in `docs/`.
