@@ -48,6 +48,8 @@ POSTGRES_DB=vision_assist
 > To change credentials **without** losing data, see
 > [`docs/issues/postgres-password-auth-failed.md`](docs/issues/postgres-password-auth-failed.md).
 
+docker compose exec vision_assist_db psql -U postgres -d vision_assist
+
 ### 3. Build and start the containers
 
 ```bash

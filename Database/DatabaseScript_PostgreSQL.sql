@@ -1,63 +1,63 @@
 CREATE TABLE "users" (
   "id" bigint,
-  "guid_user" varchar2,
-  "username" varchar2,
-  "first_name" varchar2,
-  "last_name" varchar2,
-  "email" varchar2,
+  "guid_user" varchar,
+  "username" varchar,
+  "first_name" varchar,
+  "last_name" varchar,
+  "email" varchar,
   "role" int,
-  "status" varchar2,
+  "status" varchar,
   "is_active" bool,
   "created_on" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
 CREATE TABLE "user_login" (
   "id" bigint,
   "user_id" bigint,
-  "hashed_password" varchar2,
+  "hashed_password" varchar,
   "created_on" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
 CREATE TABLE "user_login_history" (
   "id" bigint,
   "user_id" bigint,
-  "login_status" varchar2,
+  "login_status" varchar,
   "created_at" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
 CREATE TABLE "roles" (
   "id" bigint,
-  "role_name" varchar2,
-  "role_desciption" varchar2,
+  "role_name" varchar,
+  "role_description" varchar,
   "created_at" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
 CREATE TABLE "permission" (
   "id" bigint,
-  "role_id" varchar2,
-  "permission_desciption" varchar2,
+  "role_id" varchar,
+  "permission_desciption" varchar,
   "created_on" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
 CREATE TABLE "items" (
   "id" varchar,
   "owner_id" bigint,
-  "item_name" varchar2,
-  "description" varchar2,
-  "object_class" varchar2,
+  "item_name" varchar,
+  "description" varchar,
+  "object_class" varchar,
   "home_zone_id" bigint,
   "created_on" datetime,
-  "last_modified_by" varchar2,
+  "last_modified_by" varchar,
   "last_modified_on" datetime
 );
 
