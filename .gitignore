@@ -21,8 +21,13 @@ Thumbs.db
 *BKP*
 *old*
 
-ignore any documentation files
+# Ignore any documentation files
 docs/
+!docs/issues
 
-ignore any audio files
+# Ignore any audio files
 *.mp3
+
+# Ignore Docker secret files (contain the base64-encoded DB password)
+secrets/
+!secrets/.gitkeep

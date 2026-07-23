@@ -19,8 +19,10 @@ services:
     depends_on:
       - ollama
       - postgres
+      - qdrant
     # Run the precheck migration script before starting Streamlit
     command: python main.py
+    
     # ... rest of your service configuration (volumes, ports, depends_on)  
     #devices:
     #  - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
@@ -40,8 +42,11 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      # Password comes from a Docker secret file instead of a plain env var
+      - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
       - POSTGRES_DB=${POSTGRES_DB}
+    secrets:
+      - postgres_password
     ports:
       - "5432:5432"
     volumes:
@@ -53,6 +58,35 @@ services:
           - postgres
           - vision_assist_db          
 
+  qdrant:
+    image: qdrant/qdrant:latest  # vector database
+    container_name: vision_assist_qdrant
+    hostname: qdrant  # reachable as "qdrant" on the compose network
+    restart: unless-stopped
+    # Qdrant has no native *_FILE support, so read the API key from the mounted
+    # secret and export it before launching the server.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - 'export QDRANT__SERVICE__API_KEY="$(cat /run/secrets/qdrant_api_key)"; exec ./entrypoint.sh'
+    secrets:
+      - qdrant_api_key
+    ports:
+      - "6333:6333"  # REST / HTTP API + dashboard
+      - "6334:6334"  # gRPC API
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    networks:
+      default:
+        aliases:
+          - qdrant
+
 volumes:
   ollama_storage:
   postgres_storage:
+  qdrant_storage:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password.txt  # base64-encoded password (see README)
+  qdrant_api_key:
+    file: ./secrets/qdrant_api_key.txt  # Qdrant API key (see README)
