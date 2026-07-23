@@ -49,6 +49,8 @@ They are managed as Docker secrets — see [Secrets](#secrets) below.
 > To change credentials **without** losing data, see
 > [`docs/issues/postgres-password-auth-failed.md`](docs/issues/postgres-password-auth-failed.md).
 
+docker compose exec vision_assist_db psql -U postgres -d vision_assist
+
 ### Secrets
 
 Sensitive credentials are injected via Docker secrets (files under `./secrets/`,
