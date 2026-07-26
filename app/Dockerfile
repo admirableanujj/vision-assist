@@ -45,8 +45,8 @@ WORKDIR /workspace
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# # Securely pre-download the YOLOv8 model by setting the legacy unpickling override
-RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLO; YOLO('yolov8n.pt')"
+# # Securely pre-download the YOLO11n model by setting the legacy unpickling override
+RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLO; YOLO('yolo11n.pt')"
 
 # Keep container alive/interactive during development
 CMD ["bash"]

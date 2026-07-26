@@ -13,4 +13,4 @@ class BaseVisionEngine(ABC):
         Returns:
             list: A list of string labels discovered in the frame.
         """
-        pass
+        pass  # pragma: no cover

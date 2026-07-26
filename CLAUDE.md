@@ -49,7 +49,7 @@ python3 -m pytest -v
 docker exec -it vision_assist_app bash -c "cd /workspace && python3 -m pytest -v"
 ```
 
-Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine`. Extend the `--cov` flag as new modules gain tests.
+Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine` and `vision_engine`. Extend the `--cov` flag as new modules gain tests.
 
 Tests run locally without Docker: `app/tests/conftest.py` stubs the Docker-only deps (`ollama`, `langchain_openai`, `dotenv`) via `sys.modules` so the suite works on any machine with `pytest` and `pytest-cov` installed.
 
@@ -79,7 +79,7 @@ vision-assist/
 │   │   └── voice_tts.py          # gTTS → MP3 → browser autoplay
 │   └── vision_engine/
 │       ├── vision_base.py        # ABC: scan_frame()
-│       └── vision_engine.py      # YOLOVisionEngine (stubbed) + FallbackVisionEngine (random mock)
+│       └── vision_engine.py      # YOLOVisionEngine (real yolo11n inference, confidence-filtered) + FallbackVisionEngine (mock degrade path)
 ├── Database/
 │   └── DatabaseScript_PostgreSQL.sql   # Full PostgreSQL schema (13 tables)
 └── Documents/
@@ -126,6 +126,15 @@ User speaks → st.audio_input()
 - `QueryClassifier` uses `format="json"` and `temperature=0.0` in Ollama to force deterministic structured output
 - All engines are initialized once via `@st.cache_resource` in `app.py` — avoid stateful side effects in constructors
 - `VISION_ENABLED = False` in `app.py` disables camera scanning; set to `True` to enable
+- `YOLOVisionEngine` runs real YOLO inference with confidence-threshold filtering (default 0.5, see `DEFAULT_CONFIDENCE_THRESHOLD` in `vision_engine.py`); falls back to `FallbackVisionEngine`'s mock pool if weights fail to load or inference raises at runtime
+- `YOLOVisionEngine` resolves its weights file the same way `OllamaMLEngine` resolves its host: constructor arg > `YOLO_MODEL_PATH` env var > hardcoded default (`DEFAULT_LOCAL_WEIGHTS = "yolo11n.pt"`) — swapping to a bigger model in a cloud deployment is a config change, not a code change
+
+### Vision Model Selection
+
+- Local default is `yolo11n.pt` (Ultralytics YOLO11, nano) — chosen over the originally-inherited `yolov8n.pt` for fewer parameters (2.6M vs 3.2M) and higher mAP (39.5 vs 37.3) at the same CPU-only inference cost. `requirements.txt` pins `ultralytics==8.4.106` (bumped from `8.2.0`, which predated YOLO11 support).
+- Override per-environment with `YOLO_MODEL_PATH` (e.g. a larger `m`/`l` variant on a GPU deployment) without touching `vision_engine.py`.
+- Every version in the Ultralytics lineage (v5/v8/v9/v10/v11) ships under the same AGPL-3.0/Enterprise dual license — switching versions doesn't change licensing exposure.
+- Standard COCO-pretrained weights (any YOLO version) do **not** include `keys`, `wallet`, or `sunglasses` as classes — only `backpack`, `handbag`, and `cell phone` overlap with `FallbackVisionEngine.simulated_pool`. Closing that gap needs fine-tuning or the embeddings-based custom-object approach (see Milestone 4 tasks), not a different pretrained model.
 
 ### LLM Strategy
 
@@ -138,8 +147,7 @@ User speaks → st.audio_input()
 ## Known Issues
 
 1. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
-2. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
-3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
-4. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
+2. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
+3. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
 Design assets (UML diagrams, technical guide) are in `Documents/`. Markdown design docs are in `docs/`.
