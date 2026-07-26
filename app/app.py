@@ -30,7 +30,7 @@ from ml_engine.query_classifier import QueryClassifier
 from user_module.user_manager import UserManager  # <-- Imported your polished module
 
 # SYSTEM CONFIGURATION FLAGS
-VISION_ENABLED = False  # Set to True to turn the camera tracking system back on
+VISION_ENABLED = True  # Set to False to disable the camera tracking system
 
 # --- STREAMLIT UI SETUP ---
 st.set_page_config(page_title="VisionAssist L-F-A-I", page_icon="🔍", layout="wide")
