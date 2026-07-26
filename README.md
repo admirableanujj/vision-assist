@@ -129,7 +129,7 @@ This will:
 docker exec -it vision_assist_app python verify_env.py
 ```
 
-Expected output confirms: Python 3.11, PyTorch, OpenCV, YOLO11n loaded, ChromaDB initialized, and `OPENAI_API_KEY` present.
+Expected output confirms: Python 3.11, PyTorch, OpenCV, YOLO26n loaded, ChromaDB initialized, and `OPENAI_API_KEY` present.
 
 ### 5. (Optional) Pull a local LLM model via Ollama
 
@@ -141,14 +141,15 @@ Models are persisted in the `ollama_storage` Docker volume across restarts.
 
 ### Vision Model (YOLO)
 
-`YOLOVisionEngine` defaults to `yolo11n.pt` (Ultralytics YOLO11, nano) — chosen over the originally
-inherited YOLOv8n for fewer parameters and higher accuracy at the same CPU-only inference cost.
-`app/requirements.txt` pins `ultralytics==8.4.106` to support it. To use a different model (e.g. a
-bigger variant on a GPU deployment), set an env var — no code change needed:
+`YOLOVisionEngine` defaults to `yolo26n.pt` (Ultralytics YOLO26, nano, released January 2026) —
+chosen over the previously-used YOLO11n for fewer parameters, higher accuracy, and ~30% faster CPU
+inference at the same size class. `app/requirements.txt`'s `ultralytics==8.4.106` pin already
+supports it. To use a different model (e.g. a bigger variant on a GPU deployment), set an env var —
+no code change needed:
 
 ```bash
 # .env or deployment environment config
-YOLO_MODEL_PATH=yolo11m.pt
+YOLO_MODEL_PATH=yolo26m.pt
 ```
 
 Resolution order: explicit constructor arg (code) > `YOLO_MODEL_PATH` env var > hardcoded local default.

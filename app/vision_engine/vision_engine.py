@@ -29,11 +29,12 @@ from .vision_base import BaseVisionEngine
 DEFAULT_CONFIDENCE_THRESHOLD = 0.5
 
 # Local default: smallest/fastest variant for CPU-only Docker inference.
-# YOLO11n over YOLOv8n: fewer params (2.6M vs 3.2M) and higher mAP (39.5 vs 37.3)
-# at the same size class — see the Milestone 4 model-selection writeup for the
-# full comparison. Override per-environment via YOLO_MODEL_PATH (e.g. a larger
-# GPU-appropriate weights file in a cloud deployment) without touching this code.
-DEFAULT_LOCAL_WEIGHTS = "yolo11n.pt"
+# YOLO26n over YOLO11n: fewer params (2.4M vs 2.6M), higher mAP (40.9 vs 39.5),
+# and ~30% faster CPU inference (38.9ms vs 56.1ms) at the same size class — see
+# the Milestone 4 model-selection writeup for the full comparison. Override
+# per-environment via YOLO_MODEL_PATH (e.g. a larger GPU-appropriate weights
+# file in a cloud deployment) without touching this code.
+DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"
 
 
 class FallbackVisionEngine(BaseVisionEngine):
