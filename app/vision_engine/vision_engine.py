@@ -47,17 +47,24 @@ class FallbackVisionEngine(BaseVisionEngine):
         # Common household objects to mock local identification loops
         self.simulated_pool = ["keys", "phone", "wallet", "sunglasses", "backpack"]
 
-    def scan_frame(self, image_buffer) -> list:
+    def scan_frame(self, image_buffer) -> dict:
         """
-        Simulates scanning a camera buffer by returning 1-2 random items 
+        Simulates scanning a camera buffer by returning 1-2 random items
         from the tracking pool to keep the app working.
         """
         if image_buffer is None:
-            return []
-        
+            return {"detections": [], "annotated_frame": None}
+
         # Simulate an automated detection confidence threshold pass
         detected_count = random.randint(1, 2)
-        return random.sample(self.simulated_pool, k=detected_count)
+        labels = random.sample(self.simulated_pool, k=detected_count)
+        detections = [
+            {"label": label, "confidence": round(random.uniform(0.5, 0.95), 2), "box": None}
+            for label in labels
+        ]
+        detections.sort(key=lambda d: d["confidence"], reverse=True)
+        # No real image to draw on in the mock path — annotated_frame stays None.
+        return {"detections": detections, "annotated_frame": None}
 
 
 # --- REAL YOLO SYSTEM BOUNDARY ---
@@ -103,9 +110,9 @@ try:
             np_arr = np.frombuffer(raw_bytes, dtype=np.uint8)
             return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        def scan_frame(self, image_buffer) -> list:
+        def scan_frame(self, image_buffer) -> dict:
             if image_buffer is None:
-                return []
+                return {"detections": [], "annotated_frame": None}
 
             if self.model is None:
                 return self._fallback.scan_frame(image_buffer)
@@ -113,12 +120,12 @@ try:
             try:
                 frame = self._decode_frame(image_buffer)
                 if frame is None:
-                    return []
+                    return {"detections": [], "annotated_frame": None}
 
                 # conf= enforces the confidence cutoff at the ultralytics/NMS level.
                 results = self.model.predict(frame, conf=self.confidence_threshold, verbose=False)
 
-                labels = []
+                detections = []
                 for result in results:
                     for box in result.boxes:
                         confidence = float(box.conf[0])
@@ -127,10 +134,22 @@ try:
                         if confidence < self.confidence_threshold:
                             continue
                         class_id = int(box.cls[0])
-                        labels.append(result.names[class_id])
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        detections.append({
+                            "label": result.names[class_id],
+                            "confidence": round(confidence, 4),
+                            "box": (round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)),
+                        })
+                detections.sort(key=lambda d: d["confidence"], reverse=True)
 
-                # Contract describes "items discovered", not raw box count — dedupe.
-                return list(dict.fromkeys(labels))
+                # Ultralytics draws boxes/labels/confidence directly onto the frame —
+                # convert BGR (OpenCV's native order) to RGB so callers (e.g. Streamlit's
+                # st.image) don't need to know this engine's internal color convention.
+                annotated_frame = None
+                if results:
+                    annotated_frame = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
+
+                return {"detections": detections, "annotated_frame": annotated_frame}
 
             except Exception as e:
                 print(f"[WARN] YOLO inference failed: {e}. Falling back to simulated detection.")

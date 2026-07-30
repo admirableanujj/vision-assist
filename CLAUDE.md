@@ -127,6 +127,7 @@ User speaks → st.audio_input()
 - All engines are initialized once via `@st.cache_resource` in `app.py` — avoid stateful side effects in constructors
 - `VISION_ENABLED = True` in `app.py` enables camera scanning; set to `False` to disable
 - `YOLOVisionEngine` runs real YOLO inference with confidence-threshold filtering (default 0.5, see `DEFAULT_CONFIDENCE_THRESHOLD` in `vision_engine.py`); falls back to `FallbackVisionEngine`'s mock pool if weights fail to load or inference raises at runtime
+- `BaseVisionEngine.scan_frame()` returns a `dict` — `{"detections": [{"label", "confidence", "box"}, ...], "annotated_frame": <rendered image or None>}`, sorted by confidence descending. `YOLOVisionEngine` renders `annotated_frame` via `results[0].plot()` (boxes/labels/confidence drawn in, converted BGR→RGB for direct use with `st.image`); `FallbackVisionEngine` always returns `annotated_frame: None` (no real image to draw on) and `box: None` per detection
 - `YOLOVisionEngine` resolves its weights file the same way `OllamaMLEngine` resolves its host: constructor arg > `YOLO_MODEL_PATH` env var > hardcoded default (`DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"`) — swapping to a bigger model in a cloud deployment is a config change, not a code change
 
 ### Vision Model Selection

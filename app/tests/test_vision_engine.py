@@ -12,16 +12,26 @@ from vision_engine.vision_engine import (
 )
 
 
+class FakeXYXY(list):
+    """Stands in for ultralytics' xyxy tensor, which exposes .tolist()."""
+    def tolist(self):
+        return list(self)
+
+
 class FakeBox:
-    def __init__(self, conf, cls_id):
+    def __init__(self, conf, cls_id, xyxy=(0.0, 0.0, 10.0, 10.0)):
         self.conf = [conf]
         self.cls = [cls_id]
+        self.xyxy = [FakeXYXY(xyxy)]
 
 
 class FakeResult:
     def __init__(self, boxes, names):
         self.boxes = boxes
         self.names = names
+
+    def plot(self):
+        return np.zeros((10, 10, 3), dtype=np.uint8)
 
 
 class TestABCContract:
@@ -37,14 +47,25 @@ class TestABCContract:
 
 
 class TestFallbackVisionEngine:
-    def test_none_buffer_returns_empty_list(self):
-        assert FallbackVisionEngine().scan_frame(None) == []
+    def test_none_buffer_returns_empty_result(self):
+        assert FallbackVisionEngine().scan_frame(None) == {"detections": [], "annotated_frame": None}
 
     def test_returns_items_from_known_pool(self):
         eng = FallbackVisionEngine()
         result = eng.scan_frame(b"fake-bytes")
-        assert 1 <= len(result) <= 2
-        assert set(result).issubset(set(eng.simulated_pool))
+        detections = result["detections"]
+        assert 1 <= len(detections) <= 2
+        assert result["annotated_frame"] is None
+        for d in detections:
+            assert d["label"] in eng.simulated_pool
+            assert 0.0 <= d["confidence"] <= 1.0
+            assert d["box"] is None
+
+    def test_detections_sorted_by_confidence_descending(self):
+        eng = FallbackVisionEngine()
+        detections = eng.scan_frame(b"fake-bytes")["detections"]
+        confidences = [d["confidence"] for d in detections]
+        assert confidences == sorted(confidences, reverse=True)
 
 
 class TestYOLOVisionEngineInit:
@@ -65,7 +86,8 @@ class TestYOLOVisionEngineInit:
             eng = YOLOVisionEngine()
         assert eng.model is None
         result = eng.scan_frame(b"fake-bytes")
-        assert set(result).issubset(set(eng._fallback.simulated_pool))
+        labels = {d["label"] for d in result["detections"]}
+        assert labels.issubset(set(eng._fallback.simulated_pool))
 
 
 class TestModelPathResolution:
@@ -102,32 +124,61 @@ class TestYOLOVisionEngineScanFrame:
         with patch("vision_engine.vision_engine.YOLO", mock_yolo_cls):
             return YOLOVisionEngine()
 
-    def test_none_buffer_returns_empty_list(self):
+    def test_none_buffer_returns_empty_result(self):
         eng = self._make_engine(MagicMock())
-        assert eng.scan_frame(None) == []
+        assert eng.scan_frame(None) == {"detections": [], "annotated_frame": None}
 
-    def test_filters_out_low_confidence_detections(self):
+    def test_filters_out_low_confidence_detections_and_reports_box(self):
         mock_model = MagicMock()
         names = {0: "keys", 1: "phone"}
         mock_model.predict.return_value = [
-            FakeResult([FakeBox(0.91, 0), FakeBox(0.10, 1)], names)
+            FakeResult(
+                [FakeBox(0.91, 0, xyxy=(10.0, 20.0, 30.0, 40.0)), FakeBox(0.10, 1)],
+                names,
+            )
         ]
         eng = self._make_engine(MagicMock(return_value=mock_model))
 
         result = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))
 
-        assert result == ["keys"]
+        assert result["detections"] == [
+            {"label": "keys", "confidence": 0.91, "box": (10.0, 20.0, 30.0, 40.0)}
+        ]
+        assert result["annotated_frame"] is not None
         _, kwargs = mock_model.predict.call_args
         assert kwargs["conf"] == DEFAULT_CONFIDENCE_THRESHOLD
 
-    def test_dedupes_repeated_labels(self):
+    def test_keeps_repeated_labels_as_separate_detections(self):
+        # Two distinct boxes of the same class (e.g. two keys in frame) must stay
+        # separate now that each detection carries its own confidence/box — unlike
+        # the old list[str] contract, which deduped by label.
         mock_model = MagicMock()
         mock_model.predict.return_value = [
-            FakeResult([FakeBox(0.9, 0), FakeBox(0.8, 0)], {0: "keys"})
+            FakeResult(
+                [FakeBox(0.9, 0, xyxy=(0, 0, 5, 5)), FakeBox(0.8, 0, xyxy=(5, 5, 10, 10))],
+                {0: "keys"},
+            )
         ]
         eng = self._make_engine(MagicMock(return_value=mock_model))
 
-        assert eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8)) == ["keys"]
+        detections = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))["detections"]
+
+        assert len(detections) == 2
+        assert [d["label"] for d in detections] == ["keys", "keys"]
+
+    def test_detections_sorted_by_confidence_descending(self):
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [
+            FakeResult(
+                [FakeBox(0.6, 0), FakeBox(0.95, 1)],
+                {0: "keys", 1: "phone"},
+            )
+        ]
+        eng = self._make_engine(MagicMock(return_value=mock_model))
+
+        detections = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))["detections"]
+
+        assert [d["label"] for d in detections] == ["phone", "keys"]
 
     def test_inference_exception_falls_back_to_mock_pool(self):
         mock_model = MagicMock()
@@ -136,7 +187,8 @@ class TestYOLOVisionEngineScanFrame:
 
         result = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))
 
-        assert set(result).issubset(set(eng._fallback.simulated_pool))
+        labels = {d["label"] for d in result["detections"]}
+        assert labels.issubset(set(eng._fallback.simulated_pool))
 
     def test_accepts_streamlit_like_uploaded_file_buffer(self):
         # Simulates st.camera_input()'s UploadedFile: bytes-like object with .getvalue()
@@ -149,6 +201,6 @@ class TestYOLOVisionEngineScanFrame:
 
         result = eng.scan_frame(fake_uploaded_file)
 
-        assert result == []
+        assert result["detections"] == []
         fake_uploaded_file.getvalue.assert_called_once()
         mock_model.predict.assert_called_once()
