@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VisionAssist (Lost & Found AI) is a Streamlit web app that lets users locate misplaced belongings via voice commands and computer vision. The pipeline is: voice → Whisper STT → Ollama intent classifier → LLM response → gTTS audio playback. YOLO camera scanning is implemented but currently disabled.
+VisionAssist (Lost & Found AI) is a Streamlit web app that lets users locate misplaced belongings via voice commands and computer vision. The pipeline is: voice → Whisper STT → Ollama intent classifier → LLM response → gTTS audio playback. YOLO camera scanning is implemented and enabled.
 
 **Entry point:** `app/app.py` (`app/main.py` is empty — ignore it)
 
@@ -49,7 +49,7 @@ python3 -m pytest -v
 docker exec -it vision_assist_app bash -c "cd /workspace && python3 -m pytest -v"
 ```
 
-Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine`. Extend the `--cov` flag as new modules gain tests.
+Coverage is configured in `app/pytest.ini` — currently scoped to `ml_engine` and `vision_engine`. Extend the `--cov` flag as new modules gain tests.
 
 Tests run locally without Docker: `app/tests/conftest.py` stubs the Docker-only deps (`ollama`, `langchain_openai`, `dotenv`) via `sys.modules` so the suite works on any machine with `pytest` and `pytest-cov` installed.
 
@@ -79,7 +79,7 @@ vision-assist/
 │   │   └── voice_tts.py          # gTTS → MP3 → browser autoplay
 │   └── vision_engine/
 │       ├── vision_base.py        # ABC: scan_frame()
-│       └── vision_engine.py      # YOLOVisionEngine (stubbed) + FallbackVisionEngine (random mock)
+│       └── vision_engine.py      # YOLOVisionEngine (real yolo26n inference, confidence-filtered) + FallbackVisionEngine (mock degrade path)
 ├── Database/
 │   └── DatabaseScript_PostgreSQL.sql   # Full PostgreSQL schema (13 tables)
 └── Documents/
@@ -125,7 +125,17 @@ User speaks → st.audio_input()
 - `OllamaMLEngine` resolves its host from the `OLLAMA_HOST` env var (set by docker-compose), falling back to `http://vision_assist_llm_local:11434` if unset
 - `QueryClassifier` uses `format="json"` and `temperature=0.0` in Ollama to force deterministic structured output
 - All engines are initialized once via `@st.cache_resource` in `app.py` — avoid stateful side effects in constructors
-- `VISION_ENABLED = False` in `app.py` disables camera scanning; set to `True` to enable
+- `VISION_ENABLED = True` in `app.py` enables camera scanning; set to `False` to disable
+- `YOLOVisionEngine` runs real YOLO inference with confidence-threshold filtering (default 0.5, see `DEFAULT_CONFIDENCE_THRESHOLD` in `vision_engine.py`); falls back to `FallbackVisionEngine`'s mock pool if weights fail to load or inference raises at runtime
+- `BaseVisionEngine.scan_frame()` returns a `dict` — `{"detections": [{"label", "confidence", "box"}, ...], "annotated_frame": <rendered image or None>}`, sorted by confidence descending. `YOLOVisionEngine` renders `annotated_frame` via `results[0].plot()` (boxes/labels/confidence drawn in, converted BGR→RGB for direct use with `st.image`); `FallbackVisionEngine` always returns `annotated_frame: None` (no real image to draw on) and `box: None` per detection
+- `YOLOVisionEngine` resolves its weights file the same way `OllamaMLEngine` resolves its host: constructor arg > `YOLO_MODEL_PATH` env var > hardcoded default (`DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"`) — swapping to a bigger model in a cloud deployment is a config change, not a code change
+
+### Vision Model Selection
+
+- Local default is `yolo26n.pt` (Ultralytics YOLO26, nano, released January 2026) — chosen over the previously-used `yolo11n.pt` for fewer parameters (2.4M vs 2.6M), higher mAP (40.9 vs 39.5), and ~30% faster CPU inference (38.9ms vs 56.1ms) at the same size class. `requirements.txt`'s existing `ultralytics==8.4.106` pin already supports YOLO26 — no further version bump was needed.
+- Override per-environment with `YOLO_MODEL_PATH` (e.g. a larger `m`/`l` variant on a GPU deployment) without touching `vision_engine.py`.
+- Every version in the Ultralytics lineage (v5/v8/v9/v10/v11) ships under the same AGPL-3.0/Enterprise dual license — switching versions doesn't change licensing exposure.
+- Standard COCO-pretrained weights (any YOLO version) do **not** include `keys`, `wallet`, or `sunglasses` as classes — only `backpack`, `handbag`, and `cell phone` overlap with `FallbackVisionEngine.simulated_pool`. Closing that gap needs fine-tuning or the embeddings-based custom-object approach (see Milestone 4 tasks), not a different pretrained model.
 
 ### LLM Strategy
 
@@ -138,8 +148,7 @@ User speaks → st.audio_input()
 ## Known Issues
 
 1. **`tokenize_text()` defined 3× in `ml_engine.py`** — only the last definition (fake `ord()` version) is active; first two are dead code.
-2. **YOLO not wired** — `YOLOVisionEngine` has `self.model = None` and YOLO import commented out; real detection not yet active.
-3. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
-4. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
+2. **No persistence** — items are stored in `st.session_state.tracked_items` and lost on restart. PostgreSQL schema exists in `Database/DatabaseScript_PostgreSQL.sql` but no SQLAlchemy ORM layer is wired to the app yet.
+3. **`requirements.txt` incomplete** — missing `streamlit`, `faster-whisper`, `gtts`, `langchain`, `langchain-openai`, `langchain-core`.
 
 Design assets (UML diagrams, technical guide) are in `Documents/`. Markdown design docs are in `docs/`.

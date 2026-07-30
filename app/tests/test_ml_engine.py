@@ -82,7 +82,7 @@ class TestHostnameResolution:
             eng = OllamaMLEngine()
         assert eng.fallback_enabled is True
         assert eng.fallback_llm is not None
-        mock_llm_cls.assert_called_once_with(model="gpt-4o-mini", temperature=0.1)
+        mock_llm_cls.assert_called_once_with(model="gpt-4o-mini", temperature=0.1, api_key="sk-test")
 
     def test_fallback_disabled_when_chatopenai_init_raises(self):
         """

@@ -30,7 +30,7 @@ from ml_engine.query_classifier import QueryClassifier
 from user_module.user_manager import UserManager  # <-- Imported your polished module
 
 # SYSTEM CONFIGURATION FLAGS
-VISION_ENABLED = False  # Set to True to turn the camera tracking system back on
+VISION_ENABLED = True  # Set to False to disable the camera tracking system
 
 # --- STREAMLIT UI SETUP ---
 st.set_page_config(page_title="VisionAssist L-F-A-I", page_icon="🔍", layout="wide")
@@ -231,18 +231,27 @@ with col2:
     
     if VISION_ENABLED and tracker is not None:
         st.write("Optical environment frame scanner ready.")
+        st.caption(f"Confidence threshold: {getattr(tracker, 'confidence_threshold', 'N/A')}")
         cam_frame = st.camera_input("Environmental Scanner Feed")
         if cam_frame:
-            st.image(cam_frame, caption="Processing live visual frames...")
-            
             with st.spinner("Scanning frame targets..."):
-                detected_items = tracker.scan_frame(cam_frame)
-                
-                if detected_items:
-                    st.success(f"🎯 **Detected on Feed:** {', '.join([item.capitalize() for item in detected_items])}")
-                    for item in detected_items:
+                scan_result = tracker.scan_frame(cam_frame)
+                detections = scan_result["detections"]
+                annotated_frame = scan_result["annotated_frame"]
+
+                if annotated_frame is not None:
+                    st.image(annotated_frame, caption="Detected objects highlighted")
+                else:
+                    st.image(cam_frame, caption="Processing live visual frames...")
+
+                if detections:
+                    summary = ", ".join(
+                        f"{d['label'].capitalize()} ({d['confidence']:.0%})" for d in detections
+                    )
+                    st.success(f"🎯 **Detected on Feed:** {summary}")
+                    for d in detections:
                         desc = "Detected in live workspace sweep (Just now)"
-                        register_db_item(st.session_state.user_id, item.lower(), desc)
+                        register_db_item(st.session_state.user_id, d["label"].lower(), desc)
                     st.rerun()
                 else:
                     st.caption("No registered tracking assets found in the current scene context.")
