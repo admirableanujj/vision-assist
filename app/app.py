@@ -17,6 +17,7 @@ __license__ = "MIT"
 __version__ = "1.0.1"
 
 import streamlit as st
+import hashlib
 import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -237,25 +238,39 @@ with col2:
         )
         cam_frame = st.camera_input("Environmental Scanner Feed")
         if cam_frame:
-            with st.spinner("Scanning frame targets..."):
-                scan_result = tracker.scan_frame(cam_frame)
-                detections = scan_result["detections"]
-                annotated_frame = scan_result["annotated_frame"]
+            # st.camera_input keeps returning the same captured photo across
+            # every script rerun until it's explicitly retaken — without this
+            # guard, a successful detection below would scan_frame() the exact
+            # same image again on each rerun, forever. Track which photo (by
+            # content hash) was actually scanned so each capture is processed
+            # exactly once, regardless of how many times the script reruns.
+            frame_hash = hashlib.md5(cam_frame.getvalue()).hexdigest()
+            if st.session_state.get("last_scanned_frame_hash") != frame_hash:
+                st.session_state["last_scanned_frame_hash"] = frame_hash
+                with st.spinner("Scanning frame targets..."):
+                    scan_result = tracker.scan_frame(cam_frame)
+                st.session_state["last_scan_result"] = scan_result
+                for d in scan_result["detections"]:
+                    desc = "Detected in live workspace sweep (Just now)"
+                    register_db_item(st.session_state.user_id, d["label"].lower(), desc)
 
-                if annotated_frame is not None:
-                    st.image(annotated_frame, caption="Detected objects highlighted")
+            # Render from the cached result for this photo — the script reruns
+            # naturally on every interaction anyway (e.g. the inventory table
+            # below always reflects the latest registration), so no st.rerun()
+            # is needed here, and results stay visible instead of flashing away.
+            cached_result = st.session_state.get("last_scan_result")
+            if cached_result:
+                if cached_result["annotated_frame"] is not None:
+                    st.image(cached_result["annotated_frame"], caption="Detected objects highlighted")
                 else:
                     st.image(cam_frame, caption="Processing live visual frames...")
 
-                if detections:
+                if cached_result["detections"]:
                     summary = ", ".join(
-                        f"{d['label'].capitalize()} ({d['confidence']:.0%})" for d in detections
+                        f"{d['label'].capitalize()} ({d['confidence']:.0%})"
+                        for d in cached_result["detections"]
                     )
                     st.success(f"🎯 **Detected on Feed:** {summary}")
-                    for d in detections:
-                        desc = "Detected in live workspace sweep (Just now)"
-                        register_db_item(st.session_state.user_id, d["label"].lower(), desc)
-                    st.rerun()
                 else:
                     st.caption("No registered tracking assets found in the current scene context.")
     else:
