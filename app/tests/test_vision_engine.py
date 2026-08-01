@@ -13,6 +13,7 @@ from vision_engine.vision_engine import (
     DEFAULT_YOLOE_WEIGHTS,
     DEFAULT_CUSTOM_CLASSES,
     COCO_80_CLASSES,
+    HOME_ITEM_CLASSES,
 )
 
 
@@ -240,9 +241,36 @@ class TestDefaultClassLists:
         # structurally never detect a person in frame, no matter what.
         assert "person" in COCO_80_CLASSES
 
-    def test_default_custom_classes_is_coco_plus_the_three_uncoverable_items(self):
-        assert set(DEFAULT_CUSTOM_CLASSES) == set(COCO_80_CLASSES) | {"keys", "wallet", "sunglasses"}
-        assert len(DEFAULT_CUSTOM_CLASSES) == 83
+    def test_home_item_classes_has_no_duplicates(self):
+        # Easy to introduce a duplicate curating ~250 items by hand from a
+        # 4,585-entry source list — a silent dup wastes a class slot for free.
+        assert len(HOME_ITEM_CLASSES) == len(set(HOME_ITEM_CLASSES))
+
+    def test_home_item_classes_includes_the_three_originally_uncoverable_items(self):
+        # keys/wallet/sunglasses are what motivated using YOLOE at all — must
+        # never be dropped while curating/pruning this list further.
+        for item in ("keys", "wallet", "sunglasses"):
+            assert item in HOME_ITEM_CLASSES
+
+    def test_home_item_classes_excludes_obviously_non_home_categories(self):
+        # Spot-checks against the actual RAM++ source list's wild
+        # animals/vehicles/outdoor/abstract entries that were deliberately
+        # filtered out — guards against someone re-pasting an unfiltered chunk.
+        non_home_examples = {
+            "elephant", "giraffe", "zebra", "lion", "kangaroo",  # wild animals
+            "car", "airplane", "helicopter", "train", "motorcycle",  # vehicles
+            "mountain", "desert", "waterfall", "glacier", "beach",  # outdoor scenery
+            "church", "castle", "stadium", "skyscraper", "museum",  # buildings
+            "aerobics", "action film", "argument", "adventure",  # verbs/abstract
+        }
+        assert not (non_home_examples & set(HOME_ITEM_CLASSES))
+
+    def test_default_custom_classes_is_coco_union_home_items(self):
+        assert set(DEFAULT_CUSTOM_CLASSES) == set(COCO_80_CLASSES) | set(HOME_ITEM_CLASSES)
+        # Not a fixed magic number — this list is deliberately curated by hand
+        # and its exact size will drift as items are added/removed. Just
+        # confirm it's meaningfully broader than the original 83, not exact.
+        assert len(DEFAULT_CUSTOM_CLASSES) > 200
 
 
 class TestYOLOEVisionEngineInit:

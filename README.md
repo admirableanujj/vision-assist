@@ -156,13 +156,15 @@ Resolution order: explicit constructor arg (code) > `YOLO_MODEL_PATH` env var > 
 
 **Open-vocabulary detection (YOLOE):** set `VISION_MODEL_TYPE=yoloe` to switch to `YOLOEVisionEngine`,
 which detects arbitrary text-prompted classes instead of a fixed pretrained set. Defaults to all 80
-COCO classes (parity with `YOLOVisionEngine` — including `person`) plus `keys`/`wallet`/`sunglasses`,
-none of which standard YOLO can ever learn without fine-tuning. Trades lower per-class accuracy for
-zero training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to use which and real accuracy numbers.
+COCO classes (parity with `YOLOVisionEngine` — including `person`) plus a ~250-item curated
+"things found in a home" vocabulary (kitchen, living room, bedroom, bathroom, workspace — sourced
+and filtered from the RAM++ tag list, not hand-brainstormed) — ~297 classes total, none of which
+standard YOLO can ever learn without fine-tuning. Trades lower per-class accuracy for zero
+training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to use which and real accuracy numbers.
 
 ```bash
 VISION_MODEL_TYPE=yoloe
-# Optional — narrows detection to just these classes instead of the 83-class default:
+# Optional — narrows detection to just these classes instead of the ~297-class default:
 VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack
 ```
 

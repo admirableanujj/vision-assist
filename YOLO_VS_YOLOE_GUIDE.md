@@ -9,26 +9,51 @@ for the research behind *why* YOLOE exists and its real accuracy numbers, see
 
 | | **YOLO** (`VISION_MODEL_TYPE=yolo`, default) | **YOLOE** (`VISION_MODEL_TYPE=yoloe`) |
 |---|---|---|
-| Detects | Fixed 80 COCO classes only | All 80 COCO classes by default, **plus** `keys`/`wallet`/`sunglasses` — or a custom list via `VISION_CUSTOM_CLASSES` |
+| Detects | Fixed 80 COCO classes only | All 80 COCO classes **plus** a ~250-item curated home vocabulary (kitchen, living room, bedroom, bathroom, workspace) — ~297 classes by default, or a custom list via `VISION_CUSTOM_CLASSES` |
 | Covers `person`/`keys`/`wallet`/`sunglasses`? | `person` only — not COCO classes, no version of YOLO fixes this | All of them, by default |
-| Covers `phone`/`backpack`/`handbag`? | ✅ Yes, and more accurately | ✅ Yes, but less accurately than YOLO |
-| Accuracy | 40.9 mAP (YOLO26n, on its known 80 classes) | ~30 mAP (YOLOE-S, zero-shot, on LVIS) — a real, meaningful step down |
+| Covers general home items (`mug`, `remote`, `charger`, `pillow`, ...)? | Only the handful that happen to be COCO classes (`cup`, `remote`, `book`, ...) | Broad coverage by design — see "Where the class list comes from" below |
+| Accuracy | 40.9 mAP (YOLO26n, on its known 80 classes) | ~30 mAP (YOLOE-S, zero-shot, on a ~90-class benchmark) — a real, meaningful step down, and likely lower still on a ~297-class list (more candidates competing per detection) |
 | Training/dataset work required | None (pretrained) | None (pretrained, zero-shot) |
 | Default weights | `yolo26n.pt` | `yoloe-26n-seg.pt` |
 
 **Use YOLO for anything already in COCO's 80 classes** — it's more accurate and
-that's what it's built for. **Use YOLOE when you also need the classes YOLO
-structurally can't detect** (`keys`, `wallet`, `sunglasses`, or any custom item) —
-accept the accuracy tradeoff in exchange for zero fine-tuning/dataset work.
+that's what it's built for. **Use YOLOE when you also need the broader class
+coverage** (`keys`, `wallet`, `sunglasses`, or general home items YOLO structurally
+can't detect) — accept the accuracy tradeoff in exchange for zero fine-tuning/dataset
+work.
 
-**Note on the default class list:** an open-vocabulary model only ever detects
-classes it was explicitly told about via `set_classes()` — it has no implicit
-"everything" mode. `DEFAULT_CUSTOM_CLASSES` is therefore the full 80-class COCO
-list plus the 3 extra items, not just the 3 extra items alone — an earlier version
-of this defaulted to only 5 narrow classes and consequently could not detect a
-person in frame at all, despite `person` being an ordinary, easy COCO class. If
-you set `VISION_CUSTOM_CLASSES` yourself, remember it fully **replaces** the
-default rather than adding to it — include `person` explicitly if you still want it.
+## Where the class list comes from
+
+An open-vocabulary model only ever detects classes it was explicitly told about via
+`set_classes()` — there's no implicit "detect everything" mode. Two real design
+questions came up building `DEFAULT_CUSTOM_CLASSES`, both worth knowing:
+
+**"Why not just use YOLOE's built-in prompt-free vocabulary and skip maintaining a
+list at all?"** Investigated and rejected — verified directly against Ultralytics'
+own benchmarks: the prompt-free checkpoints (`-pf` suffix) score dramatically lower
+accuracy (nano: 16.6 mAP vs. ~30 mAP for prompted mode) while being *heavier*
+per-frame (15.8B FLOPs vs. 6.0B at the same nano tier) — a worse tradeoff on both
+axes for CPU deployment. Its built-in vocabulary (4,585 classes, borrowed from the
+RAM++ tagging model) also doesn't include `wallet` at all.
+
+**"So where did ~250 curated home items come from, if not prompt-free mode or
+hand-brainstorming?"** From that same RAM++ tag list — used as *source material* for
+`set_classes()`, not as the runtime vocabulary. Every candidate term was checked
+against the real 4,585-entry list, keeping only genuine matches (or a verified
+close equivalent already in the list — e.g. `bathtub` isn't a tag, but `bath` is),
+then filtered down to physical objects plausibly found at home. Deliberately
+excluded: wild animals, vehicles, outdoor scenery, buildings, professions, and
+non-object tags that shouldn't be object-detection targets at all (`aerobics`,
+`action film`, `argument` are tags in that source list — clearly not detectable
+objects). A handful of genuinely common home items aren't in RAM++ at all
+(`kettle`, `mop`, `bucket`, `doorbell`, `flashlight`, `wallet`) and were added
+manually.
+
+An earlier version of this defaulted to only 5 narrow classes and consequently
+could not detect a person in frame at all, despite `person` being an ordinary, easy
+COCO class — fixed by unioning in the full COCO list. If you set
+`VISION_CUSTOM_CLASSES` yourself, remember it fully **replaces** the default rather
+than adding to it.
 
 ## How switching actually works
 
@@ -40,7 +65,7 @@ env vars control everything:
 |---|---|---|---|
 | `VISION_MODEL_TYPE` | Both | `yolo` | `yolo` or `yoloe` — which engine backs `VisionTracker` |
 | `YOLO_MODEL_PATH` | Both | `yolo26n.pt` (YOLO) / `yoloe-26n-seg.pt` (YOLOE) | Weights file — same var name for both, interpreted per whichever engine is active |
-| `VISION_CUSTOM_CLASSES` | YOLOE only | Full 80 COCO classes + `keys`,`wallet`,`sunglasses` (83 total) | Comma-separated class names passed to `set_classes()` — **replaces** the default entirely, doesn't add to it |
+| `VISION_CUSTOM_CLASSES` | YOLOE only | 80 COCO classes + ~250 curated home items (~297 total, see below) | Comma-separated class names passed to `set_classes()` — **replaces** the default entirely, doesn't add to it |
 
 ```bash
 # Switch to YOLOE, keep default classes

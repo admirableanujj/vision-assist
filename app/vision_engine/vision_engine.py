@@ -63,11 +63,63 @@ COCO_80_CLASSES = [
     "hair drier", "toothbrush",
 ]
 
+# Curated "things found in a home" vocabulary — kitchen, living room, bedroom,
+# bathroom, and workspace items. Sourced from the RAM++ tag list (Recognize
+# Anything Model Plus, 4,585 classes — the same vocabulary YOLOE's "prompt-free"
+# checkpoints ship with internally), filtered down to physical objects plausibly
+# found indoors at home. Every entry was verified present in that source list
+# except a handful of genuine gaps (kettle, mop, bucket, doorbell, flashlight,
+# wallet — none of which RAM++ includes at all) added manually. Deliberately
+# excludes RAM++'s wild animals, vehicles, outdoor scenery, buildings,
+# professions, and abstract/verb tags (e.g. "aerobics", "action film") — those
+# aren't home objects and would only dilute confidence across more candidates
+# for no benefit. See YOLO_VS_YOLOE_GUIDE.md for the accuracy tradeoff of a
+# larger class list, and FINE_TUNING_YOLO_GUIDE.md for why RAM++ was chosen as
+# the source rather than hand-brainstorming a list from scratch.
+HOME_ITEM_CLASSES = [
+    "air conditioner", "alarm clock", "apple", "apron", "armchair", "armoire", "backpack",
+    "baking sheet", "banana", "bath", "bath towel", "bathroom cabinet", "bathroom mirror",
+    "bathroom sink", "battery", "bed", "bed frame", "bedcover", "bedding", "bedside lamp",
+    "belt", "bird cage", "blanket", "blender", "board game", "book", "bookcase", "bookshelf",
+    "boot", "bottle", "bottle opener", "bowl", "bread", "briefcase", "broom", "bucket",
+    "building block", "bulletin board", "butter", "cabinet", "calculator", "can",
+    "can opener", "candle", "candle holder", "carpet", "carrot", "cat", "ceiling fan",
+    "charger", "cheese", "chopstick", "cleaning product", "clock", "closet", "coat",
+    "coffee machine", "coffeepot", "colander", "comb", "computer chair", "computer monitor",
+    "cork", "couch", "crayon", "cream", "cup", "curtain", "cutting board", "desktop computer",
+    "detergent", "dish washer", "dishes", "dishrag", "dog", "doll", "door handle", "doorbell",
+    "doormat", "drawer", "dresser", "drum", "dustpan", "duvet", "earphone", "egg", "egg tart",
+    "electric outlet", "extension cord", "face towel", "fan", "file cabinet", "fireplace",
+    "first-aid kit", "fishbowl", "flashlight", "folder", "food processor", "fork", "fridge",
+    "fruit", "frying pan", "game controller", "gas stove", "glove", "grape", "grater",
+    "guitar", "hair drier", "hairbrush", "hamper", "hand towel", "handbag", "hanger", "hat",
+    "houseplant", "induction cooker", "iron", "ironing board", "jacket", "jar", "juicer",
+    "kettle", "keyboard", "keys", "kitchen cabinet", "kitchen counter", "kitchen hood",
+    "kitchen island", "kitchen knife", "kitchen sink", "kitchen table", "kitchen utensil",
+    "kitchen window", "kitchenware", "knife", "ladle", "lamp", "laptop", "laundry basket",
+    "lemon", "light switch", "loveseat", "luggage", "magazine", "mattress", "measuring cup",
+    "medicine", "microwave", "milk", "mirror", "mixer", "mixing bowl", "monitor", "mop",
+    "mouse", "mousepad", "mug", "napkin", "nightstand", "notebook", "notepad", "office chair",
+    "office desk", "onion", "orange", "oven", "pan", "pantry", "paper towel", "pen", "pencil",
+    "pencil case", "person", "photo frame", "piano", "picture frame", "pillow", "plate",
+    "playing card", "pot", "potato", "pressure cooker", "printer", "puzzle", "razor",
+    "recycling bin", "remote", "rice cooker", "rolling pin", "sandal", "scale", "scarf",
+    "scissors", "sewing machine", "shampoo", "shoe", "shower curtain", "shower head",
+    "side table", "sink", "slipper", "slow cooker", "soap", "soap dispenser", "spatula",
+    "speaker", "spice rack", "sponge", "spoon", "stapler", "stove", "strainer", "strawberry",
+    "sunglasses", "table", "table lamp", "tape", "tea pot", "teddy", "television",
+    "thermometer", "throw pillow", "toaster", "toilet bowl", "toilet paper", "tomato",
+    "tongs", "toothbrush", "toothpaste", "towel bar", "toy", "toy car", "tray", "umbrella",
+    "vacuum", "vase", "vegetable", "video game", "violin", "wall clock", "wallet",
+    "washing machine", "waste container", "watch", "webcam", "whisk", "whiteboard",
+    "wine glass", "wok",
+]
+
 # Classes YOLOEVisionEngine is prompted to detect by default: every COCO class
-# (parity with YOLOVisionEngine) plus the items YOLO can never detect at all,
-# regardless of version, since they're not COCO classes — see
-# FINE_TUNING_YOLO_GUIDE.md for why keys/wallet/sunglasses specifically.
-DEFAULT_CUSTOM_CLASSES = COCO_80_CLASSES + ["keys", "wallet", "sunglasses"]
+# (parity with YOLOVisionEngine) plus the curated home-item vocabulary above —
+# a genuinely broad "whatever's in a home" list, not just the 3 items that
+# originally motivated using YOLOE at all.
+DEFAULT_CUSTOM_CLASSES = sorted(set(COCO_80_CLASSES + HOME_ITEM_CLASSES))
 
 # Which real engine to use — config, not code, same pattern as YOLO_MODEL_PATH.
 DEFAULT_VISION_MODEL_TYPE = "yolo"
