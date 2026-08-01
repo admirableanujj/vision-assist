@@ -121,6 +121,20 @@ class TestModelPathResolution:
         assert eng.weights_path == "yolov10n.pt"
         mock_yolo_cls.assert_called_once_with("yolov10n.pt")
 
+    def test_empty_string_env_var_treated_same_as_absent(self):
+        # Regression test: Docker Compose's `${YOLO_MODEL_PATH:-}` passes an
+        # empty string into the container when .env doesn't set it — this is
+        # NOT the same as the var being absent to a plain os.getenv(key,
+        # default) check, which only applies `default` when the key is
+        # missing entirely. This broke YOLOEVisionEngine in production: a
+        # compose-injected "" (or a YOLO-flavored value meant for the other
+        # engine) must still resolve to *this* engine's own default.
+        with patch.dict(os.environ, {"YOLO_MODEL_PATH": ""}, clear=True), \
+             patch("vision_engine.vision_engine.YOLO") as mock_yolo_cls:
+            eng = YOLOVisionEngine()
+        assert eng.weights_path == DEFAULT_LOCAL_WEIGHTS
+        mock_yolo_cls.assert_called_once_with(DEFAULT_LOCAL_WEIGHTS)
+
 
 class TestYOLOVisionEngineScanFrame:
     def _make_engine(self, mock_yolo_cls):
@@ -244,6 +258,19 @@ class TestYOLOEVisionEngineInit:
             eng = YOLOEVisionEngine()
         assert eng.weights_path == "yoloe-26l-seg.pt"
         mock_yoloe_cls.assert_called_once_with("yoloe-26l-seg.pt")
+
+    def test_empty_string_env_var_treated_same_as_absent(self):
+        # Regression test for a real production bug: docker-compose.yml passed
+        # `YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-yolo26n.pt}` — a *YOLO* default —
+        # which meant YOLOEVisionEngine received a present-but-wrong value
+        # instead of falling through to DEFAULT_YOLOE_WEIGHTS, and tried to
+        # load a closed-set checkpoint through the open-vocabulary YOLOE class.
+        # An empty string must resolve exactly like an absent env var.
+        with patch.dict(os.environ, {"YOLO_MODEL_PATH": ""}, clear=True), \
+             patch("vision_engine.vision_engine.YOLOE") as mock_yoloe_cls:
+            eng = YOLOEVisionEngine()
+        assert eng.weights_path == DEFAULT_YOLOE_WEIGHTS
+        mock_yoloe_cls.assert_called_once_with(DEFAULT_YOLOE_WEIGHTS)
 
     def test_falls_back_gracefully_when_weights_fail_to_load(self):
         with patch("vision_engine.vision_engine.YOLOE", side_effect=Exception("no network")):

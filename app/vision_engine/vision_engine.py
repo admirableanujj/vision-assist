@@ -161,7 +161,7 @@ try:
                 return {"detections": detections, "annotated_frame": annotated_frame}
 
             except Exception as e:
-                print(f"[WARN] {type(self).__name__} inference failed: {e}. Falling back to simulated detection.")
+                print(f"[WARN] {type(self).__name__} inference failed: {e!r}. Falling back to simulated detection.")
                 return self._fallback.scan_frame(image_buffer)
 
     class YOLOVisionEngine(_UltralyticsScanMixin, BaseVisionEngine):
@@ -170,7 +170,12 @@ try:
             # hardcoded local default. Mirrors OllamaMLEngine's OLLAMA_HOST pattern —
             # swapping models per environment (local vs. a bigger cloud/GPU variant)
             # is a config change, not a code change.
-            self.weights_path = weights_path or os.getenv("YOLO_MODEL_PATH", DEFAULT_LOCAL_WEIGHTS)
+            # `os.getenv(key, default)` only applies `default` when the key is
+            # *absent* — a key present-but-empty (which is exactly what Docker
+            # Compose passes through when YOLO_MODEL_PATH is unset in .env) would
+            # otherwise silently win over DEFAULT_LOCAL_WEIGHTS. Chaining `or`
+            # instead treats "" and "unset" identically.
+            self.weights_path = weights_path or os.getenv("YOLO_MODEL_PATH") or DEFAULT_LOCAL_WEIGHTS
             self.confidence_threshold = confidence_threshold
             # Runtime degrade path: reuse the mock engine if real weights fail to
             # load, instead of leaving the app with a crashed/None vision tracker.
@@ -179,7 +184,7 @@ try:
                 self.model = YOLO(self.weights_path)
                 print(f"[INFO] YOLOVisionEngine loaded '{self.weights_path}' (conf>={confidence_threshold}).")
             except Exception as e:
-                print(f"[WARN] Failed to load YOLO weights '{self.weights_path}': {e}. "
+                print(f"[WARN] Failed to load YOLO weights '{self.weights_path}': {e!r}. "
                       f"YOLOVisionEngine will use simulated detections until this is fixed.")
                 self.model = None
 
@@ -190,7 +195,11 @@ try:
         fallback behavior as YOLOVisionEngine; only model loading differs.
         """
         def __init__(self, weights_path=None, confidence_threshold=DEFAULT_CONFIDENCE_THRESHOLD, classes=None):
-            self.weights_path = weights_path or os.getenv("YOLO_MODEL_PATH", DEFAULT_YOLOE_WEIGHTS)
+            # Same "" vs "unset" fix as YOLOVisionEngine — critical here, since
+            # without it a compose-injected empty/YOLO-flavored YOLO_MODEL_PATH
+            # would make YOLOEVisionEngine try to load a closed-set checkpoint
+            # through the open-vocabulary YOLOE class and fail outright.
+            self.weights_path = weights_path or os.getenv("YOLO_MODEL_PATH") or DEFAULT_YOLOE_WEIGHTS
             self.confidence_threshold = confidence_threshold
             self.classes = classes or _resolve_custom_classes()
             self._fallback = FallbackVisionEngine()
@@ -200,7 +209,7 @@ try:
                 print(f"[INFO] YOLOEVisionEngine loaded '{self.weights_path}' "
                       f"with classes={self.classes} (conf>={confidence_threshold}).")
             except Exception as e:
-                print(f"[WARN] Failed to load YOLOE weights '{self.weights_path}': {e}. "
+                print(f"[WARN] Failed to load YOLOE weights '{self.weights_path}': {e!r}. "
                       f"YOLOEVisionEngine will use simulated detections until this is fixed.")
                 self.model = None
 

@@ -12,12 +12,15 @@ services:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      # Vision engine config — `:-default` matters here: without it, an unset
-      # .env var becomes an *empty string* in the container (not "absent"),
-      # which would silently override vision_engine.py's own Python-side
-      # default with "". Keep these two defaults in sync with
-      # DEFAULT_LOCAL_WEIGHTS / DEFAULT_VISION_MODEL_TYPE in vision_engine.py.
-      - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-yolo26n.pt}
+      # Vision engine config. Deliberately NOT given a hardcoded value default
+      # here (e.g. `:-yolo26n.pt`) — YOLO_MODEL_PATH's correct default differs
+      # per engine (yolo26n.pt for YOLO, yoloe-26n-seg.pt for YOLOE), and a
+      # Compose-level default would win for *both* regardless of which engine
+      # is selected, since a present-but-empty env var is not the same as an
+      # absent one to a naive os.getenv(key, default) check. Left empty here;
+      # vision_engine.py's `weights_path or os.getenv(...) or DEFAULT_*`
+      # chains correctly apply the right per-engine default when this is "".
+      - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-}
       - VISION_MODEL_TYPE=${VISION_MODEL_TYPE:-yolo}
       - VISION_CUSTOM_CLASSES=${VISION_CUSTOM_CLASSES:-}
     ports:
