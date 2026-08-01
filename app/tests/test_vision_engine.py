@@ -12,6 +12,7 @@ from vision_engine.vision_engine import (
     DEFAULT_LOCAL_WEIGHTS,
     DEFAULT_YOLOE_WEIGHTS,
     DEFAULT_CUSTOM_CLASSES,
+    COCO_80_CLASSES,
 )
 
 
@@ -221,6 +222,27 @@ class TestYOLOVisionEngineScanFrame:
         assert result["detections"] == []
         fake_uploaded_file.getvalue.assert_called_once()
         mock_model.predict.assert_called_once()
+
+
+class TestDefaultClassLists:
+    """
+    Guards against typos/duplicates in the hand-typed COCO_80_CLASSES list —
+    easy to introduce and easy to miss by eye, and a silent duplicate would
+    quietly shrink YOLOE's real coverage below what YOLOVisionEngine detects.
+    """
+
+    def test_coco_80_classes_has_no_duplicates_and_exactly_eighty(self):
+        assert len(COCO_80_CLASSES) == 80
+        assert len(set(COCO_80_CLASSES)) == 80
+
+    def test_coco_80_classes_includes_person(self):
+        # The actual regression this guards: without "person", YOLOE can
+        # structurally never detect a person in frame, no matter what.
+        assert "person" in COCO_80_CLASSES
+
+    def test_default_custom_classes_is_coco_plus_the_three_uncoverable_items(self):
+        assert set(DEFAULT_CUSTOM_CLASSES) == set(COCO_80_CLASSES) | {"keys", "wallet", "sunglasses"}
+        assert len(DEFAULT_CUSTOM_CLASSES) == 83
 
 
 class TestYOLOEVisionEngineInit:

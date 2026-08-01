@@ -42,10 +42,32 @@ DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"
 # per-class accuracy than a closed-set model — see YOLO_VS_YOLOE_GUIDE.md.
 DEFAULT_YOLOE_WEIGHTS = "yoloe-26n-seg.pt"
 
-# Classes YOLOEVisionEngine is prompted to detect — deliberately the same five
-# items FallbackVisionEngine simulates, so YOLOE's real output is directly
-# comparable to both the mock pool and YOLOVisionEngine's COCO-only coverage.
-DEFAULT_CUSTOM_CLASSES = ["keys", "phone", "wallet", "sunglasses", "backpack"]
+# Standard 80-class MS-COCO label set, in the same order every COCO-pretrained
+# YOLO checkpoint uses. Passed to YOLOE's set_classes() so it detects at least
+# as much as YOLOVisionEngine does (person, cell phone, backpack, ...) — an
+# open-vocabulary model only ever detects classes it was explicitly told about,
+# so leaving this out (as an earlier version of this file did) means it can
+# structurally never see a person in frame, no matter how confident it'd be.
+COCO_80_CLASSES = [
+    "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck",
+    "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench",
+    "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra",
+    "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee",
+    "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove",
+    "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup",
+    "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange",
+    "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch",
+    "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse",
+    "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
+    "refrigerator", "book", "clock", "vase", "scissors", "teddy bear",
+    "hair drier", "toothbrush",
+]
+
+# Classes YOLOEVisionEngine is prompted to detect by default: every COCO class
+# (parity with YOLOVisionEngine) plus the items YOLO can never detect at all,
+# regardless of version, since they're not COCO classes — see
+# FINE_TUNING_YOLO_GUIDE.md for why keys/wallet/sunglasses specifically.
+DEFAULT_CUSTOM_CLASSES = COCO_80_CLASSES + ["keys", "wallet", "sunglasses"]
 
 # Which real engine to use — config, not code, same pattern as YOLO_MODEL_PATH.
 DEFAULT_VISION_MODEL_TYPE = "yolo"

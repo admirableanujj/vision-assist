@@ -155,14 +155,15 @@ YOLO_MODEL_PATH=yolo26m.pt
 Resolution order: explicit constructor arg (code) > `YOLO_MODEL_PATH` env var > hardcoded local default.
 
 **Open-vocabulary detection (YOLOE):** set `VISION_MODEL_TYPE=yoloe` to switch to `YOLOEVisionEngine`,
-which detects arbitrary text-prompted classes instead of a fixed pretrained set — including
-`keys`/`wallet`/`sunglasses`, none of which standard YOLO can ever learn without fine-tuning. Trades
-lower per-class accuracy for zero training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to
-use which and real accuracy numbers.
+which detects arbitrary text-prompted classes instead of a fixed pretrained set. Defaults to all 80
+COCO classes (parity with `YOLOVisionEngine` — including `person`) plus `keys`/`wallet`/`sunglasses`,
+none of which standard YOLO can ever learn without fine-tuning. Trades lower per-class accuracy for
+zero training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to use which and real accuracy numbers.
 
 ```bash
 VISION_MODEL_TYPE=yoloe
-VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack   # optional, defaults shown here
+# Optional — narrows detection to just these classes instead of the 83-class default:
+VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack
 ```
 
 ## Running the App

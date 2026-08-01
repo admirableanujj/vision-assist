@@ -9,17 +9,26 @@ for the research behind *why* YOLOE exists and its real accuracy numbers, see
 
 | | **YOLO** (`VISION_MODEL_TYPE=yolo`, default) | **YOLOE** (`VISION_MODEL_TYPE=yoloe`) |
 |---|---|---|
-| Detects | Fixed 80 COCO classes only | Any class you name via `VISION_CUSTOM_CLASSES` |
-| Covers `keys`/`wallet`/`sunglasses`? | ❌ Never — not COCO classes, no version fixes this | ✅ Yes — that's the whole point |
+| Detects | Fixed 80 COCO classes only | All 80 COCO classes by default, **plus** `keys`/`wallet`/`sunglasses` — or a custom list via `VISION_CUSTOM_CLASSES` |
+| Covers `person`/`keys`/`wallet`/`sunglasses`? | `person` only — not COCO classes, no version of YOLO fixes this | All of them, by default |
 | Covers `phone`/`backpack`/`handbag`? | ✅ Yes, and more accurately | ✅ Yes, but less accurately than YOLO |
 | Accuracy | 40.9 mAP (YOLO26n, on its known 80 classes) | ~30 mAP (YOLOE-S, zero-shot, on LVIS) — a real, meaningful step down |
 | Training/dataset work required | None (pretrained) | None (pretrained, zero-shot) |
 | Default weights | `yolo26n.pt` | `yoloe-26n-seg.pt` |
 
 **Use YOLO for anything already in COCO's 80 classes** — it's more accurate and
-that's what it's built for. **Use YOLOE only for the classes YOLO structurally
-can't detect** (`keys`, `wallet`, `sunglasses`, or any other custom item) — accept
-the accuracy tradeoff in exchange for zero fine-tuning/dataset work.
+that's what it's built for. **Use YOLOE when you also need the classes YOLO
+structurally can't detect** (`keys`, `wallet`, `sunglasses`, or any custom item) —
+accept the accuracy tradeoff in exchange for zero fine-tuning/dataset work.
+
+**Note on the default class list:** an open-vocabulary model only ever detects
+classes it was explicitly told about via `set_classes()` — it has no implicit
+"everything" mode. `DEFAULT_CUSTOM_CLASSES` is therefore the full 80-class COCO
+list plus the 3 extra items, not just the 3 extra items alone — an earlier version
+of this defaulted to only 5 narrow classes and consequently could not detect a
+person in frame at all, despite `person` being an ordinary, easy COCO class. If
+you set `VISION_CUSTOM_CLASSES` yourself, remember it fully **replaces** the
+default rather than adding to it — include `person` explicitly if you still want it.
 
 ## How switching actually works
 
@@ -31,7 +40,7 @@ env vars control everything:
 |---|---|---|---|
 | `VISION_MODEL_TYPE` | Both | `yolo` | `yolo` or `yoloe` — which engine backs `VisionTracker` |
 | `YOLO_MODEL_PATH` | Both | `yolo26n.pt` (YOLO) / `yoloe-26n-seg.pt` (YOLOE) | Weights file — same var name for both, interpreted per whichever engine is active |
-| `VISION_CUSTOM_CLASSES` | YOLOE only | `keys,phone,wallet,sunglasses,backpack` | Comma-separated class names passed to `set_classes()` |
+| `VISION_CUSTOM_CLASSES` | YOLOE only | Full 80 COCO classes + `keys`,`wallet`,`sunglasses` (83 total) | Comma-separated class names passed to `set_classes()` — **replaces** the default entirely, doesn't add to it |
 
 ```bash
 # Switch to YOLOE, keep default classes
@@ -73,11 +82,15 @@ EOF
 docker compose up -d --no-deps app   # recreates just the app container with new env — no rebuild needed
 docker logs -f vision_assist_app     # confirm: "[INFO] YOLOEVisionEngine loaded ... with classes=[...]"
 ```
-Take the **same photo** again. This time `keys`/`wallet`/`sunglasses` can appear —
-compare confidence scores directly against what YOLO reported for `phone`/`backpack`
-in step 1. Expect YOLOE's confidence numbers to run lower across the board, even on
-classes both engines know — that's the accuracy tradeoff from the TL;DR table,
-observed directly rather than just read about.
+Take the **same photo** again. You should see the same everyday classes YOLO
+reported (`Person`, `Cell phone`, etc.) plus, potentially, `keys`/`wallet`/`sunglasses`
+if any are in frame. Compare confidence scores directly against what YOLO reported
+in step 1 — expect YOLOE's numbers to run lower across the board, even on classes
+both engines know — that's the accuracy tradeoff from the TL;DR table, observed
+directly rather than just read about. If `person` or another obvious COCO class is
+missing entirely (not just low-confidence, but never listed at all), check
+`DEFAULT_CUSTOM_CLASSES` hasn't been narrowed by a `VISION_CUSTOM_CLASSES` override
+somewhere — that class simply isn't in the active vocabulary if so.
 
 **3. Confirm which engine is actually active** without digging through logs — the
 camera panel's caption now shows it directly: `Engine: YOLOEVisionEngine · Confidence
