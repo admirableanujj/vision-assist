@@ -79,7 +79,7 @@ vision-assist/
 │   │   └── voice_tts.py          # gTTS → MP3 → browser autoplay
 │   └── vision_engine/
 │       ├── vision_base.py        # ABC: scan_frame()
-│       └── vision_engine.py      # YOLOVisionEngine (real yolo26n inference, confidence-filtered) + FallbackVisionEngine (mock degrade path)
+│       └── vision_engine.py      # YOLOVisionEngine + YOLOEVisionEngine (open-vocab, VISION_MODEL_TYPE=yoloe) + FallbackVisionEngine (mock degrade path)
 ├── Database/
 │   └── DatabaseScript_PostgreSQL.sql   # Full PostgreSQL schema (13 tables)
 └── Documents/
@@ -129,13 +129,16 @@ User speaks → st.audio_input()
 - `YOLOVisionEngine` runs real YOLO inference with confidence-threshold filtering (default 0.5, see `DEFAULT_CONFIDENCE_THRESHOLD` in `vision_engine.py`); falls back to `FallbackVisionEngine`'s mock pool if weights fail to load or inference raises at runtime
 - `BaseVisionEngine.scan_frame()` returns a `dict` — `{"detections": [{"label", "confidence", "box"}, ...], "annotated_frame": <rendered image or None>}`, sorted by confidence descending. `YOLOVisionEngine` renders `annotated_frame` via `results[0].plot()` (boxes/labels/confidence drawn in, converted BGR→RGB for direct use with `st.image`); `FallbackVisionEngine` always returns `annotated_frame: None` (no real image to draw on) and `box: None` per detection
 - `YOLOVisionEngine` resolves its weights file the same way `OllamaMLEngine` resolves its host: constructor arg > `YOLO_MODEL_PATH` env var > hardcoded default (`DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"`) — swapping to a bigger model in a cloud deployment is a config change, not a code change
+- `YOLOVisionEngine` and `YOLOEVisionEngine` share their `scan_frame()` implementation via `_UltralyticsScanMixin` in `vision_engine.py` — only model loading (`YOLO(...)` vs `YOLOE(...)` + `set_classes()`) differs between them, so the two can't drift out of sync
+- `VISION_MODEL_TYPE` env var (`"yolo"` default, or `"yoloe"`) selects which real engine backs `VisionTracker`; `VISION_CUSTOM_CLASSES` (comma-separated) sets which classes `YOLOEVisionEngine` is prompted to detect, defaulting to `DEFAULT_CUSTOM_CLASSES` — see `YOLO_VS_YOLOE_GUIDE.md` for when to use which
+- `docker-compose.yml`'s `app` service must explicitly list `YOLO_MODEL_PATH`/`VISION_MODEL_TYPE`/`VISION_CUSTOM_CLASSES` under `environment:` with `${VAR:-default}` syntax for them to reach the container at all — Compose doesn't auto-forward arbitrary `.env` vars, and omitting the `:-default` fallback would pass an *empty string* (not "unset") when a var is missing from `.env`, silently overriding the Python-side default
 
 ### Vision Model Selection
 
 - Local default is `yolo26n.pt` (Ultralytics YOLO26, nano, released January 2026) — chosen over the previously-used `yolo11n.pt` for fewer parameters (2.4M vs 2.6M), higher mAP (40.9 vs 39.5), and ~30% faster CPU inference (38.9ms vs 56.1ms) at the same size class. `requirements.txt`'s existing `ultralytics==8.4.106` pin already supports YOLO26 — no further version bump was needed.
 - Override per-environment with `YOLO_MODEL_PATH` (e.g. a larger `m`/`l` variant on a GPU deployment) without touching `vision_engine.py`.
 - Every version in the Ultralytics lineage (v5/v8/v9/v10/v11) ships under the same AGPL-3.0/Enterprise dual license — switching versions doesn't change licensing exposure.
-- Standard COCO-pretrained weights (any YOLO version) do **not** include `keys`, `wallet`, or `sunglasses` as classes — only `backpack`, `handbag`, and `cell phone` overlap with `FallbackVisionEngine.simulated_pool`. Closing that gap needs fine-tuning or the embeddings-based custom-object approach (see Milestone 4 tasks), not a different pretrained model.
+- Standard COCO-pretrained weights (any YOLO version) do **not** include `keys`, `wallet`, or `sunglasses` as classes — only `backpack`, `handbag`, and `cell phone` overlap with `FallbackVisionEngine.simulated_pool`. Closing that gap needs fine-tuning, YOLOE's open-vocabulary detection (`VISION_MODEL_TYPE=yoloe`), or the embeddings-based custom-object approach (see Milestone 4 tasks) — not a different pretrained closed-set model.
 
 ### LLM Strategy
 

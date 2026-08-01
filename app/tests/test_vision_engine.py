@@ -7,8 +7,11 @@ from vision_engine.vision_base import BaseVisionEngine
 from vision_engine.vision_engine import (
     FallbackVisionEngine,
     YOLOVisionEngine,
+    YOLOEVisionEngine,
     DEFAULT_CONFIDENCE_THRESHOLD,
     DEFAULT_LOCAL_WEIGHTS,
+    DEFAULT_YOLOE_WEIGHTS,
+    DEFAULT_CUSTOM_CLASSES,
 )
 
 
@@ -204,3 +207,93 @@ class TestYOLOVisionEngineScanFrame:
         assert result["detections"] == []
         fake_uploaded_file.getvalue.assert_called_once()
         mock_model.predict.assert_called_once()
+
+
+class TestYOLOEVisionEngineInit:
+    """
+    YOLOEVisionEngine is the open-vocabulary counterpart to YOLOVisionEngine —
+    same scan_frame() contract (shared via _UltralyticsScanMixin), but loads a
+    different ultralytics class and must call set_classes() after loading.
+    """
+
+    def test_loads_with_default_weights_and_classes(self):
+        with patch("vision_engine.vision_engine.YOLOE") as mock_yoloe_cls:
+            eng = YOLOEVisionEngine()
+        mock_yoloe_cls.assert_called_once_with(DEFAULT_YOLOE_WEIGHTS)
+        eng.model.set_classes.assert_called_once_with(DEFAULT_CUSTOM_CLASSES)
+        assert eng.classes == DEFAULT_CUSTOM_CLASSES
+        assert eng.confidence_threshold == DEFAULT_CONFIDENCE_THRESHOLD
+
+    def test_custom_classes_constructor_arg_overrides_default(self):
+        with patch("vision_engine.vision_engine.YOLOE"):
+            eng = YOLOEVisionEngine(classes=["shoe", "hat"])
+        eng.model.set_classes.assert_called_once_with(["shoe", "hat"])
+        assert eng.classes == ["shoe", "hat"]
+
+    def test_custom_classes_env_var_used_when_no_explicit_arg(self):
+        with patch.dict(os.environ, {"VISION_CUSTOM_CLASSES": "keys, wallet ,sunglasses"}, clear=True), \
+             patch("vision_engine.vision_engine.YOLOE"):
+            eng = YOLOEVisionEngine()
+        # Whitespace around each comma-separated entry must be trimmed.
+        assert eng.classes == ["keys", "wallet", "sunglasses"]
+        eng.model.set_classes.assert_called_once_with(["keys", "wallet", "sunglasses"])
+
+    def test_weights_path_resolution_matches_yolo_pattern(self):
+        with patch.dict(os.environ, {"YOLO_MODEL_PATH": "yoloe-26l-seg.pt"}, clear=True), \
+             patch("vision_engine.vision_engine.YOLOE") as mock_yoloe_cls:
+            eng = YOLOEVisionEngine()
+        assert eng.weights_path == "yoloe-26l-seg.pt"
+        mock_yoloe_cls.assert_called_once_with("yoloe-26l-seg.pt")
+
+    def test_falls_back_gracefully_when_weights_fail_to_load(self):
+        with patch("vision_engine.vision_engine.YOLOE", side_effect=Exception("no network")):
+            eng = YOLOEVisionEngine()
+        assert eng.model is None
+        result = eng.scan_frame(b"fake-bytes")
+        labels = {d["label"] for d in result["detections"]}
+        assert labels.issubset(set(eng._fallback.simulated_pool))
+
+    def test_falls_back_gracefully_when_set_classes_raises(self):
+        # Loading succeeds but the open-vocabulary prompt step fails — must not
+        # leave the engine half-initialized with a model that was never prompted.
+        mock_model = MagicMock()
+        mock_model.set_classes.side_effect = RuntimeError("prompt encoder failed")
+        with patch("vision_engine.vision_engine.YOLOE", return_value=mock_model):
+            eng = YOLOEVisionEngine()
+        assert eng.model is None
+
+
+class TestYOLOEVisionEngineScanFrame:
+    """
+    scan_frame() itself is shared with YOLOVisionEngine via _UltralyticsScanMixin
+    and already covered thoroughly there — these confirm the mixin actually wires
+    up correctly for YOLOE too, not a full re-test of every branch.
+    """
+
+    def _make_engine(self, mock_model):
+        with patch("vision_engine.vision_engine.YOLOE", return_value=mock_model):
+            return YOLOEVisionEngine()
+
+    def test_detects_a_custom_class_not_in_coco(self):
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [
+            FakeResult([FakeBox(0.82, 0, xyxy=(1.0, 2.0, 3.0, 4.0))], {0: "wallet"})
+        ]
+        eng = self._make_engine(mock_model)
+
+        result = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))
+
+        assert result["detections"] == [
+            {"label": "wallet", "confidence": 0.82, "box": (1.0, 2.0, 3.0, 4.0)}
+        ]
+        assert result["annotated_frame"] is not None
+
+    def test_inference_exception_falls_back_to_mock_pool(self):
+        mock_model = MagicMock()
+        mock_model.predict.side_effect = RuntimeError("CPU OOM")
+        eng = self._make_engine(mock_model)
+
+        result = eng.scan_frame(np.zeros((10, 10, 3), dtype=np.uint8))
+
+        labels = {d["label"] for d in result["detections"]}
+        assert labels.issubset(set(eng._fallback.simulated_pool))

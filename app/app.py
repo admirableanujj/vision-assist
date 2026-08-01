@@ -231,7 +231,10 @@ with col2:
     
     if VISION_ENABLED and tracker is not None:
         st.write("Optical environment frame scanner ready.")
-        st.caption(f"Confidence threshold: {getattr(tracker, 'confidence_threshold', 'N/A')}")
+        st.caption(
+            f"Engine: {type(tracker).__name__} · "
+            f"Confidence threshold: {getattr(tracker, 'confidence_threshold', 'N/A')}"
+        )
         cam_frame = st.camera_input("Environmental Scanner Feed")
         if cam_frame:
             with st.spinner("Scanning frame targets..."):

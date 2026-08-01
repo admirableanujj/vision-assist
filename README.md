@@ -139,7 +139,7 @@ docker exec -it vision_assist_llm ollama pull llama3
 
 Models are persisted in the `ollama_storage` Docker volume across restarts.
 
-### Vision Model (YOLO)
+### Vision Model (YOLO / YOLOE)
 
 `YOLOVisionEngine` defaults to `yolo26n.pt` (Ultralytics YOLO26, nano, released January 2026) —
 chosen over the previously-used YOLO11n for fewer parameters, higher accuracy, and ~30% faster CPU
@@ -153,6 +153,17 @@ YOLO_MODEL_PATH=yolo26m.pt
 ```
 
 Resolution order: explicit constructor arg (code) > `YOLO_MODEL_PATH` env var > hardcoded local default.
+
+**Open-vocabulary detection (YOLOE):** set `VISION_MODEL_TYPE=yoloe` to switch to `YOLOEVisionEngine`,
+which detects arbitrary text-prompted classes instead of a fixed pretrained set — including
+`keys`/`wallet`/`sunglasses`, none of which standard YOLO can ever learn without fine-tuning. Trades
+lower per-class accuracy for zero training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to
+use which and real accuracy numbers.
+
+```bash
+VISION_MODEL_TYPE=yoloe
+VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack   # optional, defaults shown here
+```
 
 ## Running the App
 

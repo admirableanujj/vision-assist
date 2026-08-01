@@ -11,7 +11,15 @@ services:
       - OLLAMA_HOST=http://vision_assist_llm_local:11434
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}      
+      - POSTGRES_DB=${POSTGRES_DB}
+      # Vision engine config — `:-default` matters here: without it, an unset
+      # .env var becomes an *empty string* in the container (not "absent"),
+      # which would silently override vision_engine.py's own Python-side
+      # default with "". Keep these two defaults in sync with
+      # DEFAULT_LOCAL_WEIGHTS / DEFAULT_VISION_MODEL_TYPE in vision_engine.py.
+      - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-yolo26n.pt}
+      - VISION_MODEL_TYPE=${VISION_MODEL_TYPE:-yolo}
+      - VISION_CUSTOM_CLASSES=${VISION_CUSTOM_CLASSES:-}
     ports:
       - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
     stdin_open: true
