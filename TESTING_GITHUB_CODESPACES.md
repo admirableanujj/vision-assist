@@ -23,9 +23,12 @@ would need you to set up TLS yourself for the same permission prompt to appear.
 GitHub Free personal accounts include Codespaces hours billed in **core-hours**
 (roughly 60 hours/month on a 2-core machine, proportionally less on bigger machines —
 exact current numbers are worth checking on your own GitHub billing page, since these
-can change). Pick at least a 4-core/8GB machine type if offered — comfortable margin
-for building torch/opencv/ultralytics — knowing it burns through the monthly
-allowance faster than a 2-core box.
+can change). Since both YOLO and YOLOE now load eagerly and stay resident
+simultaneously (see `YOLO_VS_YOLOE_GUIDE.md`) rather than just one at a time, prefer
+**4-core/16GB** if offered — confirmed comfortable headroom for both models plus
+torch/opencv/ultralytics plus the rest of the stack. A smaller machine will likely
+still work (not tested), but will burn through the monthly allowance more slowly at
+the cost of more memory pressure.
 
 ## 1. Create the codespace
 
@@ -91,16 +94,28 @@ authenticated GitHub session, that's already secure; no need to make it public.
 ## 7. Log in and take the photo
 
 - Username: `test_user`, password: `test_user` (auto-seeded — no need to register)
-- Right panel, "👁️ Live Camera Workspace" (shows the active confidence threshold
-  above the camera widget) → camera icon → allow the browser camera permission
-  prompt (this is *your laptop's* camera, even though Streamlit runs remotely) →
-  hold your phone in frame → snap it
+- Right panel, "👁️ Live Camera Workspace" — a **"Detection engine" radio button**
+  (YOLO / YOLOE) sits above the camera widget; both are pre-warmed right after
+  login so switching between them to compare is instant (see
+  `YOLO_VS_YOLOE_GUIDE.md`). Below that: shows the active confidence threshold →
+  camera icon → allow the browser camera permission prompt (this is *your laptop's*
+  camera, even though Streamlit runs remotely) → hold your phone in frame → snap it
 
 The photo redisplays as an **annotated image with bounding boxes drawn around each
-detected item** (rendered by Ultralytics, not the raw photo). Expect
+detected item** — not the raw photo, but not Ultralytics' own renderer either: the
+app draws boxes/labels itself (`_draw_detections()` in `vision_engine.py`) so the
+image can never show something the text results don't. Expect
 `🎯 Detected on Feed: Cell phone (91%)` (and likely `Person (78%)` too, since your
 face/body will be in frame — that's correct, not a bug; see `TESTING_LOCAL_YOLO.md`
 for why). Percentages are the model's actual confidence per detection.
+
+**If the app crashes / the browser shows a "CONNECTING" status and a 502 error**
+right after a scan: this happened during development and traced back to
+Streamlit's dev-mode file watcher, not a real resource limit — already fixed via
+`app/.streamlit/config.toml` (`fileWatcherType = "none"`). If it recurs, check
+`docker inspect vision_assist_app --format='{{.State.ExitCode}}'` after
+reproducing — `main.py` propagates Streamlit's real exit code, so a nonzero/negative
+value here is a genuine new lead, not the same already-fixed issue.
 
 ## 8. Confirm real inference, not the mock
 

@@ -54,13 +54,18 @@ ml_brain, speaker, whisper_stt, router, user_mgr = boot_system_core()
 @st.cache_resource
 def get_vision_engine(engine_choice: str):
     """
-    Lazily builds and caches one tracker instance per engine choice, so the UI
-    selector below can switch between YOLO/YOLOE live for direct comparison —
-    Streamlit's cache_resource caches per distinct argument value, so switching
-    back to an already-tried engine is instant, and neither model loads at all
-    until actually selected. Falls back to the mock engine if the real vision
-    stack (cv2/ultralytics) isn't importable at all, same degrade path
-    YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
+    Builds and caches one tracker instance per engine choice — cache_resource
+    keys on the argument, so once both "YOLO" and "YOLOE" have been built here
+    they both stay resident simultaneously for instant switching thereafter.
+    An earlier version deliberately avoided this (evicting the previous engine
+    on switch) after a crash that looked like memory pressure from holding both
+    models at once — traced instead to Streamlit's dev-mode file watcher
+    restarting the process (fixed via .streamlit/config.toml's
+    fileWatcherType="none"), not memory. Confirmed fine holding both models on
+    a 4-core/16GB Codespace, and speed of switching matters more here than
+    memory headroom we're not short on. Falls back to the mock engine if the
+    real vision stack (cv2/ultralytics) isn't importable at all, same degrade
+    path YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
     """
     if not VISION_ENABLED:
         return None
@@ -162,6 +167,17 @@ if not st.session_state.authenticated:
 # --- AUTHENTICATED SYSTEM DASHBOARD ---
 st.title("🔍 FoundItGini — Lost & Found AI")
 st.caption(f"Authenticated Session: {st.session_state.username} | Powered by Whisper, Computer Vision & Postgres.")
+
+if VISION_ENABLED:
+    # Warm both engines up front rather than lazily on first selection, so
+    # switching the radio below is always instant — including the very first
+    # time either engine is picked. Only pays a real loading cost once per
+    # container lifetime: get_vision_engine is cache_resource'd, so every
+    # subsequent script rerun (every user interaction reruns this whole file)
+    # hits the cache and returns immediately.
+    with st.spinner("Warming up YOLO + YOLOE models..."):
+        get_vision_engine("YOLO")
+        get_vision_engine("YOLOE")
 
 # Logout control inside sidebar top boundary
 with st.sidebar:

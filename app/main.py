@@ -30,10 +30,17 @@ def main():
         # We use subprocess.Popen to let Streamlit take over the process space cleanly,
         # or we keep subprocess.run but make sure it handles signals and doesn't swallow stdout.
         process = subprocess.Popen(streamlit_cmd)
-        
-        # Wait for the process to exit or be killed (Ctrl+C)
-        process.wait()
-        
+
+        # Wait for the process to exit or be killed (Ctrl+C). Propagate its real
+        # return code (negative when killed by a signal, e.g. -9 for SIGKILL) —
+        # without this, `main()` falls through and the container always reports
+        # a clean exit 0 to Docker no matter how Streamlit actually died, which
+        # makes `docker inspect`'s ExitCode useless for diagnosing crashes.
+        returncode = process.wait()
+        if returncode != 0:
+            print(f"[FATAL ERROR] Streamlit exited with code {returncode}.")
+        sys.exit(returncode)
+
     except KeyboardInterrupt:
         print("\n[SYSTEM] Shutting down gracefully.")
         if 'process' in locals():

@@ -33,7 +33,7 @@ Skipping `ollama` (large image) and `qdrant` keeps the footprint down.
 
 **Not covered by this setup:** Ollama/Qdrant containers aren't running at all. If you
 later want voice/LLM features too, you'll need `docker-compose up -d ollama` and a
-model pull (`docker exec -it vision_assist_llm ollama pull llama3` — several GB).
+model pull (`docker exec -it vision_assist_llm_local ollama pull llama3` — several GB).
 
 ## 1. `.env`
 
@@ -88,15 +88,21 @@ Wait for `[INFO] DB migrations completed successfully.` then Streamlit's
 
 ## 6. Take the photo
 
-Right-hand "👁️ Live Camera Workspace" panel (shows the active confidence threshold
-above the camera widget) → camera icon → hold your phone up clearly in frame →
-allow the browser camera permission → snap it.
+Right-hand "👁️ Live Camera Workspace" panel — a **"Detection engine" radio button**
+(YOLO / YOLOE, defaults to YOLO) sits above the camera widget, letting you compare
+both engines on the same photo without restarting anything (see
+`YOLO_VS_YOLOE_GUIDE.md`); both are pre-warmed right after login so switching is
+instant either way. Below that, the panel shows the active confidence threshold →
+camera icon → hold your phone up clearly in frame → allow the browser camera
+permission → snap it.
 
 ## 7. What to expect
 
 - The photo redisplays as an **annotated image with bounding boxes drawn around each
-  detected item** — this isn't the raw photo anymore, it's rendered by Ultralytics
-  with boxes/labels/confidence baked in.
+  detected item** — this isn't the raw photo anymore. Boxes/labels/confidence are
+  drawn by the app's own `_draw_detections()` helper (plain `cv2.rectangle`/
+  `cv2.putText`), not `ultralytics.Results.plot()` — this guarantees what's drawn
+  can never diverge from the text detections reported below the image.
 - COCO's real class name is **"cell phone"**, not "phone" — expect
   `🎯 Detected on Feed: Cell phone (91%)` (confidence percentage per label).
 - Your face/body will likely also register as **"person"** (a real COCO class) —

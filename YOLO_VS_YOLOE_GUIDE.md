@@ -55,11 +55,31 @@ COCO class — fixed by unioning in the full COCO list. If you set
 `VISION_CUSTOM_CLASSES` yourself, remember it fully **replaces** the default rather
 than adding to it.
 
-## How switching actually works
+## Switching from the UI (easiest — no restart needed)
+
+The camera panel in `app.py` has a live **"Detection engine"** radio button (YOLO /
+YOLOE) right above the camera widget — pick either one and take the same photo to
+compare results directly, no `.env` edits or container restart required. Both
+engines are eagerly loaded right after login (`get_vision_engine("YOLO")` and
+`get_vision_engine("YOLOE")` are both warmed before the dashboard renders), each
+cached via `@st.cache_resource` keyed on the choice — so both stay resident in
+memory simultaneously and switching between them is instant in either direction.
+This is a one-time cost per container lifetime, confirmed comfortable on a
+4-core/16GB Codespace; on a much smaller machine it's worth watching memory usage,
+though the crash this app hit during development turned out to be Streamlit's file
+watcher (see `CLAUDE.md`'s Key Design Patterns), not model memory.
+
+The camera panel's caption also shows which engine actually served the last
+detection (`Engine: YOLOVisionEngine · Confidence threshold: 0.5`), so you never
+have to guess which one is active.
+
+## How switching actually works (env vars — for scripts/tests, or the container-wide default)
 
 Both engines share the exact same `scan_frame()` contract (`_UltralyticsScanMixin`
-in `vision_engine.py`) — `app.py` doesn't know or care which one is active. Three
-env vars control everything:
+in `vision_engine.py`). `VisionTracker` (used outside `app.py`'s own UI, e.g. in
+scripts or tests — not by the UI selector, which always starts on YOLO regardless
+of these vars and only uses `get_vision_engine()` directly) picks its engine from
+three env vars:
 
 | Var | Applies to | Default | Purpose |
 |---|---|---|---|
