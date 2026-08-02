@@ -15,15 +15,22 @@ pyttsx3==2.90
 ultralytics==8.4.106
 # opencv-python-headless==4.10.0.84
 
-# YOLOE's set_classes() needs a CLIP-style text encoder. Pinned here explicitly
-# so it's baked into the image at build time — without this, Ultralytics
-# silently pip-installs it at RUNTIME on first YOLOE use (visible as
-# "Successfully installed clip-... ftfy-... wcwidth-..." in container logs),
-# live inside the already-running Streamlit process. That live install doesn't
-# take effect without restarting the interpreter (Ultralytics prints exactly
-# this warning), and continuing to run with the mismatched state caused a real
-# SIGSEGV crash (confirmed via docker inspect ExitCode after a photo scan).
-clip==1.0
+# YOLOE's set_classes() needs OpenAI's CLIP text encoder. Pinned here
+# explicitly so it's baked into the image at build time — without this,
+# Ultralytics silently pip-installs it at RUNTIME on first YOLOE use (visible
+# as "Successfully installed clip-... ftfy-... wcwidth-..." in container
+# logs), live inside the already-running Streamlit process. That live install
+# doesn't take effect without restarting the interpreter (Ultralytics prints
+# exactly this warning), and continuing to run with the mismatched state
+# caused a real SIGSEGV crash (confirmed via docker inspect ExitCode after a
+# photo scan).
+#
+# NOTE: the bare PyPI package literally named "clip" (max version 0.2.0) is a
+# different, unrelated project — OpenAI's real CLIP isn't published to PyPI at
+# all and only installs from its git repo, hence the git+https URL below
+# rather than a normal "clip==1.0" pin (verified locally: installing from this
+# URL reports itself as "clip-1.0", matching Ultralytics' own runtime install).
+git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
 ftfy==6.3.1
 wcwidth==0.8.2
 
