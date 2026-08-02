@@ -186,6 +186,33 @@ try:
             return [c.strip() for c in raw.split(",") if c.strip()]
         return list(DEFAULT_CUSTOM_CLASSES)
 
+    def _draw_detections(frame, detections):
+        """
+        Draw a box + label + confidence for each detection directly from our
+        own already-validated detection data, onto a copy of the decoded frame.
+
+        Deliberately NOT using ultralytics' Results.plot() here — its default
+        rendering varies by model task (segmentation checkpoints like YOLOE's
+        also render mask overlays, keypoints, etc., depending on what the
+        Results object carries), which is one more thing that can silently
+        differ or fail between YOLO and YOLOE without changing what scan_frame()
+        reports as detected. Drawing straight from `detections` guarantees the
+        image always shows exactly what the text output says, for every engine.
+        """
+        annotated = frame.copy()
+        for d in detections:
+            if d["box"] is None:
+                continue
+            x1, y1, x2, y2 = (int(round(c)) for c in d["box"])
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            caption = f"{d['label']} {d['confidence']:.0%}"
+            text_y = max(y1 - 8, 12)  # keep the label on-frame if the box starts near the top edge
+            cv2.putText(
+                annotated, caption, (x1, text_y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2, cv2.LINE_AA,
+            )
+        return annotated
+
     class _UltralyticsScanMixin:
         """
         scan_frame() is identical across every ultralytics-backed engine (YOLO,
@@ -225,12 +252,11 @@ try:
                         })
                 detections.sort(key=lambda d: d["confidence"], reverse=True)
 
-                # Ultralytics draws boxes/labels/confidence directly onto the frame —
-                # convert BGR (OpenCV's native order) to RGB so callers (e.g. Streamlit's
+                # Draw straight from `detections` (see _draw_detections' docstring
+                # for why, not ultralytics' Results.plot()), then convert BGR
+                # (OpenCV's native order) to RGB so callers (e.g. Streamlit's
                 # st.image) don't need to know this engine's internal color convention.
-                annotated_frame = None
-                if results:
-                    annotated_frame = cv2.cvtColor(results[0].plot(), cv2.COLOR_BGR2RGB)
+                annotated_frame = cv2.cvtColor(_draw_detections(frame, detections), cv2.COLOR_BGR2RGB)
 
                 return {"detections": detections, "annotated_frame": annotated_frame}
 

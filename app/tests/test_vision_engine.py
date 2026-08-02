@@ -167,6 +167,26 @@ class TestYOLOVisionEngineScanFrame:
         _, kwargs = mock_model.predict.call_args
         assert kwargs["conf"] == DEFAULT_CONFIDENCE_THRESHOLD
 
+    def test_draws_box_with_integer_pixel_coordinates(self):
+        # Real cv2.rectangle raises TypeError on float coordinates — the mocked
+        # cv2 in this test suite wouldn't catch that mistake, so assert the
+        # actual call args directly rather than just "annotated_frame is truthy".
+        mock_model = MagicMock()
+        mock_model.predict.return_value = [
+            FakeResult([FakeBox(0.91, 0, xyxy=(10.4, 20.6, 30.0, 40.0))], {0: "keys"})
+        ]
+        eng = self._make_engine(MagicMock(return_value=mock_model))
+
+        with patch("vision_engine.vision_engine.cv2.rectangle") as mock_rectangle:
+            eng.scan_frame(np.zeros((50, 50, 3), dtype=np.uint8))
+
+        mock_rectangle.assert_called_once()
+        args, _ = mock_rectangle.call_args
+        _frame, top_left, bottom_right, *_ = args
+        assert top_left == (10, 21)  # round(10.4)=10, round(20.6)=21
+        assert bottom_right == (30, 40)
+        assert all(isinstance(c, int) for c in (*top_left, *bottom_right))
+
     def test_keeps_repeated_labels_as_separate_detections(self):
         # Two distinct boxes of the same class (e.g. two keys in frame) must stay
         # separate now that each detection carries its own confidence/box — unlike
