@@ -200,6 +200,7 @@ try:
         image always shows exactly what the text output says, for every engine.
         """
         annotated = frame.copy()
+        drawn = 0
         for d in detections:
             if d["box"] is None:
                 continue
@@ -211,6 +212,13 @@ try:
                 annotated, caption, (x1, text_y),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2, cv2.LINE_AA,
             )
+            drawn += 1
+        # Temporary diagnostic — remove once box rendering is confirmed working
+        # live. Prints to `docker logs vision_assist_app`, not the Streamlit UI.
+        print(f"[DEBUG] _draw_detections: {drawn}/{len(detections)} boxes drawn, "
+              f"frame shape {frame.shape} dtype {frame.dtype}, "
+              f"annotated shape {annotated.shape} dtype {annotated.dtype}, "
+              f"same object as input: {annotated is frame}")
         return annotated
 
     class _UltralyticsScanMixin:

@@ -26,7 +26,7 @@ from psycopg2.extras import RealDictCursor
 from ml_engine import OllamaMLEngine
 from voice_engine.voice_stt import SpeechToTextConverter
 from voice_engine.voice_tts import TextToSpeechConverter
-from vision_engine import VisionTracker
+from vision_engine import FallbackVisionEngine
 from ml_engine.query_classifier import QueryClassifier
 from user_module.user_manager import UserManager  # <-- Imported your polished module
 
@@ -38,19 +38,40 @@ st.set_page_config(page_title="VisionAssist L-F-A-I", page_icon="🔍", layout="
 
 # Initialize our core engine abstractions inside Streamlit's resource cache
 @st.cache_resource
-def boot_system_core(enable_vision: bool):
+def boot_system_core():
     brain = OllamaMLEngine()
     return (
-        brain, 
+        brain,
         TextToSpeechConverter(speech_rate=165),
         SpeechToTextConverter(),  # Whisper Engine initialization
-        VisionTracker() if enable_vision else None,
         QueryClassifier(brain.local_client),
         UserManager()  # <-- Cached your User Manager instance
     )
 
-# Pass our configuration flag down into the boot initialization
-ml_brain, speaker, whisper_stt, tracker, router, user_mgr = boot_system_core(VISION_ENABLED)
+ml_brain, speaker, whisper_stt, router, user_mgr = boot_system_core()
+
+
+@st.cache_resource
+def get_vision_engine(engine_choice: str):
+    """
+    Lazily builds and caches one tracker instance per engine choice, so the UI
+    selector below can switch between YOLO/YOLOE live for direct comparison —
+    Streamlit's cache_resource caches per distinct argument value, so switching
+    back to an already-tried engine is instant, and neither model loads at all
+    until actually selected. Falls back to the mock engine if the real vision
+    stack (cv2/ultralytics) isn't importable at all, same degrade path
+    YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
+    """
+    if not VISION_ENABLED:
+        return None
+    try:
+        if engine_choice == "YOLOE":
+            from vision_engine import YOLOEVisionEngine as EngineCls
+        else:
+            from vision_engine import YOLOVisionEngine as EngineCls
+    except ImportError:
+        EngineCls = FallbackVisionEngine
+    return EngineCls()
 
 
 # --- DATABASE UTILITY HELPERS ---
@@ -229,7 +250,23 @@ with col1:
 
 with col2:
     st.subheader("👁️ Live Camera Workspace")
-    
+
+    if VISION_ENABLED:
+        engine_choice = st.radio(
+            "Detection engine",
+            options=["YOLO", "YOLOE"],
+            index=0,
+            horizontal=True,
+            help=(
+                "YOLO: fixed 80 COCO classes, most accurate. "
+                "YOLOE: open-vocabulary, much broader class list (see YOLO_VS_YOLOE_GUIDE.md), "
+                "lower accuracy per class. Switch anytime to compare on the same photo."
+            ),
+        )
+        tracker = get_vision_engine(engine_choice)
+    else:
+        tracker = None
+
     if VISION_ENABLED and tracker is not None:
         st.write("Optical environment frame scanner ready.")
         st.caption(
@@ -244,7 +281,10 @@ with col2:
             # same image again on each rerun, forever. Track which photo (by
             # content hash) was actually scanned so each capture is processed
             # exactly once, regardless of how many times the script reruns.
-            frame_hash = hashlib.md5(cam_frame.getvalue()).hexdigest()
+            # Engine choice is part of the key too — switching YOLO<->YOLOE on
+            # an already-scanned photo must trigger a fresh scan with the newly
+            # selected engine, not silently keep showing the old engine's result.
+            frame_hash = hashlib.md5(cam_frame.getvalue()).hexdigest() + f"|{engine_choice}"
             if st.session_state.get("last_scanned_frame_hash") != frame_hash:
                 st.session_state["last_scanned_frame_hash"] = frame_hash
                 with st.spinner("Scanning frame targets..."):
