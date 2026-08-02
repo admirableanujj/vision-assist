@@ -4,6 +4,7 @@ VisionCore Orchestrator
 Consolidates system startup by running database migrations/seeding 
 and launching the Streamlit interface programmatically.
 """
+import os
 import sys
 import subprocess
 from precheck_db import run_migrations_and_seeding
@@ -27,9 +28,19 @@ def main():
     ]
     
     try:
+        # PYTHONFAULTHANDLER=1 makes CPython dump the active Python-level stack
+        # to stderr when a fatal native signal (SIGSEGV, SIGABRT, SIGFPE, SIGBUS)
+        # kills the process — without it, a segfault just kills Streamlit with no
+        # trace at all (we've now hit two of these with only a bare signal number
+        # to go on). This won't show the C-level frame that actually faulted, but
+        # it shows which Python line was executing at the moment it happened,
+        # which is enough to tell apart "inside cv2", "inside torch", "inside
+        # Streamlit's own rendering", etc. instead of guessing blind.
+        env = {**os.environ, "PYTHONFAULTHANDLER": "1"}
+
         # We use subprocess.Popen to let Streamlit take over the process space cleanly,
         # or we keep subprocess.run but make sure it handles signals and doesn't swallow stdout.
-        process = subprocess.Popen(streamlit_cmd)
+        process = subprocess.Popen(streamlit_cmd, env=env)
 
         # Wait for the process to exit or be killed (Ctrl+C). Propagate its real
         # return code (negative when killed by a signal, e.g. -9 for SIGKILL) —
