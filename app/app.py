@@ -348,6 +348,7 @@ df_data = [
 ]
 
 if df_data:
+    print(f"[DEBUG] df_data before st.table ({len(df_data)} rows): {df_data!r}")
     st.table(df_data)
 else:
     st.info("No belongings currently registered in your database profile. Use the sidebar to register your first item!")
