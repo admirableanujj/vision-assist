@@ -18,7 +18,9 @@ __version__ = "1.0.1"
 
 import streamlit as st
 import hashlib
+import html
 import os
+import gc
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -51,24 +53,31 @@ def boot_system_core():
 ml_brain, speaker, whisper_stt, router, user_mgr = boot_system_core()
 
 
-@st.cache_resource
 def get_vision_engine(engine_choice: str):
     """
-    Builds and caches one tracker instance per engine choice — cache_resource
-    keys on the argument, so once both "YOLO" and "YOLOE" have been built here
-    they both stay resident simultaneously for instant switching thereafter.
-    An earlier version deliberately avoided this (evicting the previous engine
-    on switch) after a crash that looked like memory pressure from holding both
-    models at once — traced instead to Streamlit's dev-mode file watcher
-    restarting the process (fixed via .streamlit/config.toml's
-    fileWatcherType="none"), not memory. Confirmed fine holding both models on
-    a 4-core/16GB Codespace, and speed of switching matters more here than
-    memory headroom we're not short on. Falls back to the mock engine if the
-    real vision stack (cv2/ultralytics) isn't importable at all, same degrade
-    path YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
+    Builds exactly one vision engine at a time, evicting the previous one on
+    switch. An earlier version held both YOLO and YOLOE resident at once
+    (@st.cache_resource keyed per engine) for instant switching — reverted
+    after repeated, still-unresolved SIGSEGV crashes during st.table()
+    rendering. We were never able to conclusively pin holding both models
+    resident as the cause (isolated repros of the actual crash line never
+    reproduced it), but it doubles native-library memory residency
+    (torch + CLIP text encoder x2) for zero benefit while that's unresolved,
+    so it's cut as a stabilization measure. Switching engines now costs a
+    real reload (a few seconds), not instant — deliberate tradeoff for a
+    smaller footprint. Falls back to the mock engine if the real vision stack
+    (cv2/ultralytics) isn't importable at all, same degrade path
+    YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
     """
     if not VISION_ENABLED:
         return None
+
+    if (
+        st.session_state.get("_vision_engine_choice") == engine_choice
+        and "_vision_engine" in st.session_state
+    ):
+        return st.session_state["_vision_engine"]
+
     try:
         if engine_choice == "YOLOE":
             from vision_engine import YOLOEVisionEngine as EngineCls
@@ -76,7 +85,16 @@ def get_vision_engine(engine_choice: str):
             from vision_engine import YOLOVisionEngine as EngineCls
     except ImportError:
         EngineCls = FallbackVisionEngine
-    return EngineCls()
+
+    # Drop the previous engine before building the new one so only one
+    # model's native memory is ever resident at a time.
+    st.session_state.pop("_vision_engine", None)
+    gc.collect()
+
+    engine = EngineCls()
+    st.session_state["_vision_engine"] = engine
+    st.session_state["_vision_engine_choice"] = engine_choice
+    return engine
 
 
 # --- DATABASE UTILITY HELPERS ---
@@ -168,16 +186,8 @@ if not st.session_state.authenticated:
 st.title("🔍 FoundItGini — Lost & Found AI")
 st.caption(f"Authenticated Session: {st.session_state.username} | Powered by Whisper, Computer Vision & Postgres.")
 
-if VISION_ENABLED:
-    # Warm both engines up front rather than lazily on first selection, so
-    # switching the radio below is always instant — including the very first
-    # time either engine is picked. Only pays a real loading cost once per
-    # container lifetime: get_vision_engine is cache_resource'd, so every
-    # subsequent script rerun (every user interaction reruns this whole file)
-    # hits the cache and returns immediately.
-    with st.spinner("Warming up YOLO + YOLOE models..."):
-        get_vision_engine("YOLO")
-        get_vision_engine("YOLOE")
+# No eager pre-warm here — get_vision_engine() now loads exactly one engine
+# lazily, on first selection, to keep only one model resident at a time.
 
 # Logout control inside sidebar top boundary
 with st.sidebar:
@@ -276,10 +286,16 @@ with col2:
             help=(
                 "YOLO: fixed 80 COCO classes, most accurate. "
                 "YOLOE: open-vocabulary, much broader class list (see YOLO_VS_YOLOE_GUIDE.md), "
-                "lower accuracy per class. Switch anytime to compare on the same photo."
+                "lower accuracy per class. Switching reloads the model (a few seconds) — "
+                "only one engine is kept resident at a time."
             ),
         )
-        tracker = get_vision_engine(engine_choice)
+        already_loaded = st.session_state.get("_vision_engine_choice") == engine_choice
+        if already_loaded:
+            tracker = get_vision_engine(engine_choice)
+        else:
+            with st.spinner(f"Loading {engine_choice}..."):
+                tracker = get_vision_engine(engine_choice)
     else:
         tracker = None
 
@@ -348,7 +364,35 @@ df_data = [
 ]
 
 if df_data:
-    print(f"[DEBUG] df_data before st.table ({len(df_data)} rows): {df_data!r}")
-    st.table(df_data)
+    # st.table()/st.dataframe() both serialize through pyarrow internally,
+    # which segfaulted deterministically at this exact call across every
+    # reproduction we captured (via PYTHONFAULTHANDLER) — but never in
+    # isolated pyarrow/pandas repros of the same data, so the trigger lives
+    # somewhere in the live process we couldn't pin down. Rendering as plain
+    # HTML instead skips Arrow serialization entirely, removing the crash
+    # site regardless of root cause.
+    rows_html = "".join(
+        "<tr>"
+        f"<td>{html.escape(str(row['Belonging']))}</td>"
+        f"<td>{html.escape(str(row['Last Seen Tracking Status']))}</td>"
+        f"<td>{html.escape(str(row['Last System Log']))}</td>"
+        "</tr>"
+        for row in df_data
+    )
+    st.markdown(
+        f"""
+        <table style="width:100%; border-collapse: collapse;">
+          <thead>
+            <tr>
+              <th style="text-align:left; border-bottom:1px solid #666; padding:6px;">Belonging</th>
+              <th style="text-align:left; border-bottom:1px solid #666; padding:6px;">Last Seen Tracking Status</th>
+              <th style="text-align:left; border-bottom:1px solid #666; padding:6px;">Last System Log</th>
+            </tr>
+          </thead>
+          <tbody>{rows_html}</tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
+    )
 else:
     st.info("No belongings currently registered in your database profile. Use the sidebar to register your first item!")
