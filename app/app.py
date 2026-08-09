@@ -55,19 +55,12 @@ ml_brain, speaker, whisper_stt, router, user_mgr = boot_system_core()
 
 def get_vision_engine(engine_choice: str):
     """
-    Builds exactly one vision engine at a time, evicting the previous one on
-    switch. An earlier version held both YOLO and YOLOE resident at once
-    (@st.cache_resource keyed per engine) for instant switching — reverted
-    after repeated, still-unresolved SIGSEGV crashes during st.table()
-    rendering. We were never able to conclusively pin holding both models
-    resident as the cause (isolated repros of the actual crash line never
-    reproduced it), but it doubles native-library memory residency
-    (torch + CLIP text encoder x2) for zero benefit while that's unresolved,
-    so it's cut as a stabilization measure. Switching engines now costs a
-    real reload (a few seconds), not instant — deliberate tradeoff for a
-    smaller footprint. Falls back to the mock engine if the real vision stack
-    (cv2/ultralytics) isn't importable at all, same degrade path
-    YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
+    Builds exactly one vision engine at a time (session_state-cached),
+    evicting the previous one on switch — switching engines costs a real
+    reload, not instant, in exchange for only ever holding one model's
+    native memory resident. Falls back to the mock engine if the real
+    vision stack (cv2/ultralytics) isn't importable at all, same degrade
+    path YOLOVisionEngine/YOLOEVisionEngine use internally for load failures.
     """
     if not VISION_ENABLED:
         return None
@@ -364,13 +357,8 @@ df_data = [
 ]
 
 if df_data:
-    # st.table()/st.dataframe() both serialize through pyarrow internally,
-    # which segfaulted deterministically at this exact call across every
-    # reproduction we captured (via PYTHONFAULTHANDLER) — but never in
-    # isolated pyarrow/pandas repros of the same data, so the trigger lives
-    # somewhere in the live process we couldn't pin down. Rendering as plain
-    # HTML instead skips Arrow serialization entirely, removing the crash
-    # site regardless of root cause.
+    # Rendered as plain HTML rather than st.table()/st.dataframe() — both
+    # route through pyarrow's Arrow serialization, which segfaulted here.
     rows_html = "".join(
         "<tr>"
         f"<td>{html.escape(str(row['Belonging']))}</td>"

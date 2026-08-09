@@ -1,11 +1,6 @@
-# Disable Streamlit's dev-mode file watcher / hot-reload.
-#
-# This is a deployed container someone else's browser connects to, not a
-# source tree being live-edited while the app runs — hot-reload buys nothing
-# here. We also have direct log evidence (local_sources_watcher.py raising on
-# torch.classes.__path__ during scan_frame's inference path, seen twice in a
-# session that then died with a clean/voluntary process exit) that this
-# watcher is actively misbehaving against this dependency set, so turning it
-# off removes a real, already-observed source of instability.
+# Disable Streamlit's dev-mode file watcher / hot-reload — this is a deployed
+# container other people's browsers connect to, not a live-edited source
+# tree, and the watcher throws probing torch.classes.__path__ during
+# inference, killing the process.
 [server]
 fileWatcherType = "none"

@@ -31,27 +31,8 @@ def main():
         # PYTHONFAULTHANDLER=1 makes CPython dump the active Python-level stack
         # to stderr when a fatal native signal (SIGSEGV, SIGABRT, SIGFPE, SIGBUS)
         # kills the process — without it, a segfault just kills Streamlit with no
-        # trace at all. This is what finally caught the real fault: it landed
-        # inside pyarrow's pandas_compat.convert_column, called from st.table()
-        # rendering the inventory log — NOT anywhere in the vision/torch code we
-        # originally suspected.
-        #
-        # A segfault *inside* pyarrow's native conversion (rather than a Python
-        # ArrowTypeError/ArrowInvalid) is the signature of native memory/thread
-        # corruption, not a bad value. By the time that table renders, PyTorch is
-        # already resident with its own native thread pool; pyarrow's
-        # Table.from_pandas does its own multi-threaded native conversion by
-        # default, and the two coexisting in one process is a known class of
-        # segfault. Forcing both down to single-threaded execution removes the
-        # concurrent native execution that would trigger it.
-        env = {
-            **os.environ,
-            "PYTHONFAULTHANDLER": "1",
-            "OMP_NUM_THREADS": "1",
-            "PYARROW_NUM_THREADS": "1",
-            "OPENBLAS_NUM_THREADS": "1",
-            "MKL_NUM_THREADS": "1",
-        }
+        # trace at all.
+        env = {**os.environ, "PYTHONFAULTHANDLER": "1"}
 
         # We use subprocess.Popen to let Streamlit take over the process space cleanly,
         # or we keep subprocess.run but make sure it handles signals and doesn't swallow stdout.
