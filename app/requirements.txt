@@ -12,7 +12,7 @@ pyaudio==0.2.14; sys_platform == 'win32' or sys_platform == 'darwin'
 pyttsx3==2.90
 
 # 👁️ Headless Edge Computer Vision
-ultralytics==8.2.0
+ultralytics==8.4.106
 # opencv-python-headless==4.10.0.84
 
 # 🧠 LLM Orchestration, Routing & Agent Primitives
@@ -40,3 +40,6 @@ requests==2.32.3
 pandas==2.2.1
 numpy==1.26.4
 # ffmpeg-python
+
+# 🗄️ Database Adapter
+psycopg2-binary==2.9.9

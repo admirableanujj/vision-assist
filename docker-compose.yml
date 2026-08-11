@@ -3,11 +3,15 @@ services:
     build:
       context: ./app
     container_name: vision_assist_app
+    image: visionassist_user-module-app
     volumes:
       - ./app:/workspace
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=http://vision_assist_llm_local:11434
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}      
     ports:
       - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
     stdin_open: true
@@ -16,6 +20,10 @@ services:
       - ollama
       - postgres
       - qdrant
+    # Run the precheck migration script before starting Streamlit
+    command: python main.py
+    
+    # ... rest of your service configuration (volumes, ports, depends_on)  
     #devices:
     #  - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
 
@@ -47,6 +55,8 @@ services:
       default:
         aliases:
           - db
+          - postgres
+          - vision_assist_db          
 
   qdrant:
     image: qdrant/qdrant:latest  # vector database

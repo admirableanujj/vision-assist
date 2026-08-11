@@ -13,6 +13,8 @@ _DOCKER_ONLY_DEPS = [
     "langchain_openai",
     "langchain_core",
     "langchain_core.messages",
+    "cv2",
+    "ultralytics",
 ]
 for _mod in _DOCKER_ONLY_DEPS:
     sys.modules.setdefault(_mod, MagicMock())
