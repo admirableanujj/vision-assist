@@ -134,12 +134,12 @@ Expected output confirms: Python 3.11, PyTorch, OpenCV, YOLO26n loaded, ChromaDB
 ### 5. (Optional) Pull a local LLM model via Ollama
 
 ```bash
-docker exec -it vision_assist_llm ollama pull llama3
+docker exec -it vision_assist_llm_local ollama pull llama3
 ```
 
 Models are persisted in the `ollama_storage` Docker volume across restarts.
 
-### Vision Model (YOLO)
+### Vision Model (YOLO / YOLOE)
 
 `YOLOVisionEngine` defaults to `yolo26n.pt` (Ultralytics YOLO26, nano, released January 2026) —
 chosen over the previously-used YOLO11n for fewer parameters, higher accuracy, and ~30% faster CPU
@@ -153,6 +153,25 @@ YOLO_MODEL_PATH=yolo26m.pt
 ```
 
 Resolution order: explicit constructor arg (code) > `YOLO_MODEL_PATH` env var > hardcoded local default.
+
+**Open-vocabulary detection (YOLOE):** set `VISION_MODEL_TYPE=yoloe` to switch to `YOLOEVisionEngine`,
+which detects arbitrary text-prompted classes instead of a fixed pretrained set. Defaults to all 80
+COCO classes (parity with `YOLOVisionEngine` — including `person`) plus a ~250-item curated
+"things found in a home" vocabulary (kitchen, living room, bedroom, bathroom, workspace — sourced
+and filtered from the RAM++ tag list, not hand-brainstormed) — ~297 classes total, none of which
+standard YOLO can ever learn without fine-tuning. Trades lower per-class accuracy for zero
+training/dataset work. See `YOLO_VS_YOLOE_GUIDE.md` for when to use which and real accuracy numbers.
+
+```bash
+VISION_MODEL_TYPE=yoloe
+# Optional — narrows detection to just these classes instead of the ~297-class default:
+VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack
+```
+
+**Easier: switch from the UI directly.** The camera panel has a live "Detection
+engine" radio button (YOLO/YOLOE) — no env var or restart needed, both engines are
+pre-warmed at login so switching is instant. See `YOLO_VS_YOLOE_GUIDE.md` for the
+full comparison and when to use which.
 
 ## Running the App
 
@@ -195,22 +214,20 @@ git config core.hooksPath .githooks
 | Service | Port | Description |
 |---|---|---|
 | `vision_assist_app` | 8501 | Main Python application (Streamlit) |
-| `vision_assist_llm` | 11434 | Ollama local LLM server |
+| `vision_assist_llm_local` | 11434 | Ollama local LLM server |
 | `vision_assist_db` | 5432 | PostgreSQL database (hostname `db`) |
-| `vision_assist_qdrant` | 6333 / 6334 | Qdrant vector database (hostname `qdrant`) |
+| `vision_assist_qdrant` | 6333 / 6334 | Qdrant vector database (hostname `qdrant`) — running, but not yet called from application code |
 
 ## Stack
 
 | Component | Library |
 |---|---|
 | Frontend | Streamlit |
-| Speech input | OpenAI Whisper API / Faster-Whisper (offline) |
+| Speech input | OpenAI Whisper API / Faster-Whisper (offline fallback) |
 | Speech output | gTTS → MP3 → browser autoplay |
-| Object detection | YOLOv8 (ultralytics), OpenCV |
-| Speech input | SpeechRecognition |
-| Speech output | pyttsx3 |
+| Object detection | YOLO26 (ultralytics), OpenCV — plus YOLOE for open-vocabulary detection, see below |
 | Cloud LLM | OpenAI API |
 | Local LLM | Ollama |
 | Orchestration | LangChain |
-| Vector memory | Qdrant |
-| Relational store | PostgreSQL |
+| Vector memory | Qdrant (provisioned, not yet wired into the app) |
+| Relational store | PostgreSQL (auth + item persistence) |

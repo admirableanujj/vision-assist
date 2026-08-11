@@ -15,6 +15,14 @@ pyttsx3==2.90
 ultralytics==8.4.106
 # opencv-python-headless==4.10.0.84
 
+# YOLOE's set_classes() needs OpenAI's CLIP text encoder — pinned here so
+# it's baked into the image at build time rather than pip-installed at
+# runtime on first use. The bare PyPI package named "clip" is a different,
+# unrelated project; OpenAI's real CLIP only installs from its git repo.
+git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
+ftfy==6.3.1
+wcwidth==0.8.2
+
 # 🧠 LLM Orchestration, Routing & Agent Primitives
 openai==1.61.0
 langchain
