@@ -26,6 +26,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from faster_whisper import WhisperModel
 from .voice_base import VoiceEngineAC
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 load_dotenv()
 
@@ -47,15 +50,15 @@ class SpeechToTextConverter(VoiceEngineAC):
         
         if api_key:
             self.client = OpenAI(api_key=api_key)
-            print("[INFO] Whisper STT initialized via Cloud API Wrapper.")
+            logger.info("Whisper STT initialized via Cloud API Wrapper.")
         else:
-            print("[INFO] No cloud API key detected. Bootstrapping fully offline Faster-Whisper layer...")
+            logger.info("No cloud API key detected. Bootstrapping fully offline Faster-Whisper layer...")
             try:
                 # Using the optimized "tiny" or "base" model for fast, low-overhead CPU calculations
                 self.local_model = WhisperModel("tiny", device="cpu", compute_type="int8")
-                print("[INFO] Local offline Whisper Core successfully mapped to CPU hardware.")
+                logger.info("Local offline Whisper Core successfully mapped to CPU hardware.")
             except ImportError:
-                print("[ERROR] 'faster-whisper' package missing from local environment manifest.")
+                logger.error("'faster-whisper' package missing from local environment manifest.")
 
     def execute(self, audio_buffer) -> str:
         """
@@ -75,7 +78,7 @@ class SpeechToTextConverter(VoiceEngineAC):
                 )
                 return response.text.strip()
             except Exception as e:
-                print(f"[WARN] Cloud transcription failed: {e}. Attempting local fallback execution...")
+                logger.warning(f"Cloud transcription failed: {e}. Attempting local fallback execution...")
 
         # --- PIPELINE B: Local Autonomous Framework ---
         if self.local_model:
@@ -86,7 +89,7 @@ class SpeechToTextConverter(VoiceEngineAC):
                 transcription = "".join([segment.text for segment in segments])
                 return transcription.strip()
             except Exception as local_err:
-                print(f"[CRITICAL] Local execution loop broken: {local_err}")
+                logger.exception(f"Local execution loop broken: {local_err}")
                 return "Error: Local transcription engine processing exception."
 
         return "where are my keys"

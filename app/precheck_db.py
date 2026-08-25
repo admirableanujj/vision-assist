@@ -18,6 +18,9 @@ import uuid
 import hashlib
 import psycopg2
 import requests
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 __author__ = "Anujj Saxena"
 __license__ = "MIT"
@@ -47,14 +50,14 @@ def run_migrations_and_seeding():
                 password=db_password,
                 connect_timeout=3
             )
-            print("[INFO] Database link verified.")
+            logger.info("Database link verified.")
             break
         except psycopg2.OperationalError:
-            print(f"[WARN] Database connection attempt {i+1}/{max_retries} failed. Retrying...")
+            logger.warning(f"Database connection attempt {i+1}/{max_retries} failed. Retrying...")
             time.sleep(2)
 
     if not conn:
-        print("[ERROR] Could not connect to PostgreSQL database. Exiting precheck.")
+        logger.error("Could not connect to PostgreSQL database. Exiting precheck.")
         exit(1)
 
     # 2. Table Definitions (DDL)
@@ -214,7 +217,7 @@ def run_migrations_and_seeding():
             for query in schema_queries:
                 cur.execute(query)
         conn.commit()
-        print("[INFO] DB migrations completed successfully.")
+        logger.info("DB migrations completed successfully.")
 
         # 3. Seed Initial Base Data
         with conn.cursor() as cur:
@@ -230,7 +233,7 @@ def run_migrations_and_seeding():
             # Verify if we need to seed the users
             cur.execute("SELECT COUNT(*) FROM users;")
             if cur.fetchone()[0] == 0:
-                print("[INFO] No existing users found. Seeding default accounts...")
+                logger.info("No existing users found. Seeding default accounts...")
                 
                 # --- A. Seed Admin User (Role: 2) ---
                 admin_guid = str(uuid.uuid4())
@@ -286,14 +289,14 @@ def run_migrations_and_seeding():
                     ON CONFLICT DO NOTHING;
                 """, (camera_id, camera_id))
 
-                print("[INFO] Default seeding data successfully inserted.")
+                logger.info("Default seeding data successfully inserted.")
             else:
-                print("[INFO] Table datasets contain prior objects. Skipping seeding phase.")
+                logger.info("Table datasets contain prior objects. Skipping seeding phase.")
         
         conn.commit()
 
     except Exception as e:
-        print(f"[ERROR] Seeding process failed: {e}")
+        logger.exception(f"Seeding process failed: {e}")
         conn.rollback()
     finally:
         conn.close()
@@ -305,12 +308,12 @@ def verify_ollama_model(model_name="llama3"):
             models = [m['name'] for m in response.json().get('models', [])]
             # Match exact or tag-less (e.g. 'llama3:latest' or 'llama3')
             if any(model_name in m for m in models):
-                print(f"[INFO] Local LLM status check: '{model_name}' is downloaded and ready.")
+                logger.info(f"Local LLM status check: '{model_name}' is downloaded and ready.")
                 return True
-            print(f"[WARN] Local model '{model_name}' is missing on the Ollama instance.")
+            logger.warning(f"Local model '{model_name}' is missing on the Ollama instance.")
             return False
     except requests.exceptions.ConnectionError:
-        print("[ERROR] Cannot reach the Ollama service container.")
+        logger.error("Cannot reach the Ollama service container.")
     return False
 
 if __name__ == "__main__":

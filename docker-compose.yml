@@ -6,6 +6,7 @@ services:
     image: visionassist_user-module-app
     volumes:
       - ./app:/workspace
+      - logs_storage:/workspace/logs
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OLLAMA_HOST=http://vision_assist_llm_local:11434
@@ -95,6 +96,7 @@ volumes:
   ollama_storage:
   postgres_storage:
   qdrant_storage:
+  logs_storage:
 
 secrets:
   postgres_password:

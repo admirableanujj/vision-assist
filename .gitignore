@@ -31,3 +31,6 @@ docs/
 # Ignore Docker secret files (contain the base64-encoded DB password)
 secrets/
 !secrets/.gitkeep
+
+# Ignore application logs directory
+app/logs/

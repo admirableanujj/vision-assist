@@ -8,16 +8,20 @@ import os
 import sys
 import subprocess
 from precheck_db import run_migrations_and_seeding
+from logging_config import get_logger
+
+# Orchestrator runs non-interactively inside containers — avoid console spam
+logger = get_logger(__name__, console=False)
 
 def main():
-    print("[SYSTEM] Running database precheck and migrations...")
+    logger.info("[SYSTEM] Running database precheck and migrations...")
     try:
         run_migrations_and_seeding()
     except Exception as e:
-        print(f"[FATAL ERROR] Database precheck/migration failed: {e}")
+        logger.exception(f"Database precheck/migration failed: {e}")
         sys.exit(1)
     
-    print("[SYSTEM] Starting Streamlit interface...")
+    logger.info("[SYSTEM] Starting Streamlit interface...")
     
     # Using sys.executable ensures we use the exact same Python binary and path 
     # where all pip packages (like streamlit) are installed inside the container.
@@ -45,16 +49,16 @@ def main():
         # makes `docker inspect`'s ExitCode useless for diagnosing crashes.
         returncode = process.wait()
         if returncode != 0:
-            print(f"[FATAL ERROR] Streamlit exited with code {returncode}.")
+            logger.fatal(f"Streamlit exited with code {returncode}.")
         sys.exit(returncode)
 
     except KeyboardInterrupt:
-        print("\n[SYSTEM] Shutting down gracefully.")
+        logger.info("Shutting down gracefully via KeyboardInterrupt")
         if 'process' in locals():
             process.terminate()
         sys.exit(0)
     except Exception as e:
-        print(f"[ERROR] Streamlit failed to launch: {e}")
+        logger.exception(f"Streamlit failed to launch: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
