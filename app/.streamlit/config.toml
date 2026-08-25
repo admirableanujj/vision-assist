@@ -1,0 +1,6 @@
+# Disable Streamlit's dev-mode file watcher / hot-reload — this is a deployed
+# container other people's browsers connect to, not a live-edited source
+# tree, and the watcher throws probing torch.classes.__path__ during
+# inference, killing the process.
+[server]
+fileWatcherType = "none"

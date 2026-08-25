@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Only run when Python files are part of the commit
+STAGED_PY=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$' || true)
+if [ -z "$STAGED_PY" ]; then
+    exit 0
+fi
+
+echo "🧪 Running tests with 80% coverage gate..."
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT/app"
+
+if ! python3 -m pytest --tb=short -q; then
+    echo ""
+    echo "❌ Commit blocked: tests failed or coverage is below 80%."
+    echo "   Run 'python3 -m pytest -v' inside app/ to see the full report."
+    exit 1
+fi
+
+echo "✅ All tests passed and coverage ≥ 80%."

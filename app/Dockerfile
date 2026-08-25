@@ -18,6 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     espeak \
     espeak-ng \
     alsa-utils \
+    postgresql-client \ 
     && rm -rf /var/lib/apt/lists/*
 
 # Upgrade packaging pipeline tools
@@ -44,8 +45,14 @@ WORKDIR /workspace
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# # Securely pre-download the YOLOv8 model by setting the legacy unpickling override
-RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLO; YOLO('yolov8n.pt')"
+# # Securely pre-download the YOLO26n model by setting the legacy unpickling override
+RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLO; YOLO('yolo26n.pt')"
+
+# Pre-download YOLOE's weights AND exercise set_classes() at build time, not
+# just load the checkpoint — set_classes() is what pulls in the CLIP text
+# encoder, and requirements.txt already pins clip/ftfy/wcwidth so this
+# resolves from already-installed packages instead of pip-installing at runtime.
+RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLOE; m = YOLOE('yoloe-26n-seg.pt'); m.set_classes(['person'])"
 
 # Keep container alive/interactive during development
 CMD ["bash"]

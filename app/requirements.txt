@@ -12,8 +12,16 @@ pyaudio==0.2.14; sys_platform == 'win32' or sys_platform == 'darwin'
 pyttsx3==2.90
 
 # 👁️ Headless Edge Computer Vision
-ultralytics==8.2.0
+ultralytics==8.4.106
 # opencv-python-headless==4.10.0.84
+
+# YOLOE's set_classes() needs OpenAI's CLIP text encoder — pinned here so
+# it's baked into the image at build time rather than pip-installed at
+# runtime on first use. The bare PyPI package named "clip" is a different,
+# unrelated project; OpenAI's real CLIP only installs from its git repo.
+git+https://github.com/openai/CLIP.git@d05afc436d78f1c48dc0dbf8e5980a9d471f35f6
+ftfy==6.3.1
+wcwidth==0.8.2
 
 # 🧠 LLM Orchestration, Routing & Agent Primitives
 openai==1.61.0
@@ -23,9 +31,16 @@ ollama==0.6.2
 # openai-whisper
 # torch==2.7.1
 
+# 🔎 Vector Database Client
+qdrant-client==1.11.0
+
 # 🎙️ Local Speech Processing Core
 faster-whisper==1.0.3
 gTTS==2.5.1  
+
+# 🧪 Testing
+pytest==8.3.4
+pytest-cov==6.0.0
 
 # ⚙️ Infrastructure & Communication Utility Layers
 python-dotenv==1.0.1
@@ -33,3 +48,6 @@ requests==2.32.3
 pandas==2.2.1
 numpy==1.26.4
 # ffmpeg-python
+
+# 🗄️ Database Adapter
+psycopg2-binary==2.9.9

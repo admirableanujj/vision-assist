@@ -46,8 +46,8 @@ def test_computer_vision():
         from ultralytics import YOLO
         import numpy as np
         
-        print("🔄 Loading pre-cached YOLOv8 model weights...")
-        model = YOLO("yolov8n.pt")
+        print("🔄 Loading pre-cached YOLO26n model weights...")
+        model = YOLO("yolo26n.pt")
         print("✔ Model loaded successfully!")
         
         # Create a fake blank image array to test the mathematical forward-pass inference matrix
