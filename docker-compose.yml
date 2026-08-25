@@ -11,7 +11,18 @@ services:
       - OLLAMA_HOST=http://vision_assist_llm_local:11434
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-      - POSTGRES_DB=${POSTGRES_DB}      
+      - POSTGRES_DB=${POSTGRES_DB}
+      # Vision engine config. Deliberately NOT given a hardcoded value default
+      # here (e.g. `:-yolo26n.pt`) — YOLO_MODEL_PATH's correct default differs
+      # per engine (yolo26n.pt for YOLO, yoloe-26n-seg.pt for YOLOE), and a
+      # Compose-level default would win for *both* regardless of which engine
+      # is selected, since a present-but-empty env var is not the same as an
+      # absent one to a naive os.getenv(key, default) check. Left empty here;
+      # vision_engine.py's `weights_path or os.getenv(...) or DEFAULT_*`
+      # chains correctly apply the right per-engine default when this is "".
+      - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-}
+      - VISION_MODEL_TYPE=${VISION_MODEL_TYPE:-yolo}
+      - VISION_CUSTOM_CLASSES=${VISION_CUSTOM_CLASSES:-}
     ports:
       - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
     stdin_open: true
