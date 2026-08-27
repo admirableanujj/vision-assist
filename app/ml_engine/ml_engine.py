@@ -25,6 +25,9 @@ import os
 import ollama
 from dotenv import load_dotenv
 from .ml_base_engine import BaseMLEngine
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Load local environment variables (for OpenAI API keys, etc.)
 load_dotenv()
@@ -193,7 +196,7 @@ class OllamaMLEngine(BaseMLEngine):
         
         # Configure client bindings for the official Ollama SDK
         self.local_client = ollama.Client(host=self.host)
-        print(f"[INFO] OllamaMLEngine natively bound over SDK client via {self.host}")
+        logger.info(f"OllamaMLEngine natively bound over SDK client via {self.host}")
         
         # Configure LangChain / OpenAI Fallback Integration
         self.fallback_llm = None
@@ -206,11 +209,11 @@ class OllamaMLEngine(BaseMLEngine):
                 from langchain_openai import ChatOpenAI
                 self.fallback_llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, api_key=api_key)
                 self.fallback_enabled = True
-                print("[INFO] LangChain OpenAI cloud hybrid fallback engine securely configured.")
+                logger.info("LangChain OpenAI cloud hybrid fallback engine securely configured.")
             except Exception as e:
-                print(f"[WARN] LangChain OpenAI fallback failed to initialize: {e}. Continuing with local Ollama only.")
+                logger.warning(f"LangChain OpenAI fallback failed to initialize: {e}. Continuing with local Ollama only.")
         else:
-            print("[INFO] Missing or placeholder OpenAI key. Cloud fallback disabled. Using 100% local Ollama.")
+            logger.info("Missing or placeholder OpenAI key. Cloud fallback disabled. Using 100% local Ollama.")
 
     def tokenize_text(self, input_text: str) -> list:
         """
@@ -237,6 +240,8 @@ class OllamaMLEngine(BaseMLEngine):
             "Keep your final spoken output clear, conversational, and under two sentences."
         )
 
+        import time as _time
+        logger.info(f"[locate] Generating response for user_text='{user_text[:80]}'")
         try:
             # 1. Attempt Native Local Inference via Ollama SDK
             response = self.local_client.generate(
@@ -244,14 +249,16 @@ class OllamaMLEngine(BaseMLEngine):
                 prompt=system_prompt,
                 options={"temperature": 0.2, "stop": ["\n\n"]}
             )
-            return response.get("response", "").strip()
+            _resp = response.get("response", "").strip()
+            logger.info(f"[locate] Local response generated (len={len(_resp)})")
+            return _resp
 
         except Exception as local_error:
-            print(f"[SYSTEM WARN] Local ML Engine generation failed: {local_error}")
+            logger.warning(f"Local ML Engine generation failed: {local_error}")
             
             # 2. Trigger Intelligent Cloud Failover if Local Container is Offline/Stalled
             if self.fallback_enabled:
-                print("[SYSTEM INFO] Engaging LangChain cloud backup pipelines...")
+                logger.info("Engaging LangChain cloud backup pipelines...")
                 try:
                     from langchain_core.messages import SystemMessage, HumanMessage
                     messages = [
@@ -261,6 +268,7 @@ class OllamaMLEngine(BaseMLEngine):
                     cloud_response = self.fallback_llm.invoke(messages)
                     return cloud_response.content.strip()
                 except Exception as cloud_error:
+                    logger.exception(f"Cloud fallback invocation failed: {cloud_error}")
                     return f"System Orchestration Failure. Cloud chain also unreachable: {cloud_error}"
             
             return "VisionCore-ML is currently recovering or adjusting container system links."
@@ -277,6 +285,8 @@ class OllamaMLEngine(BaseMLEngine):
             "Do not reference lost items or object tracking unless the user asks about them."
         )
 
+        import time as _time
+        logger.info(f"[general] Generating general response for user_text='{user_text[:80]}'")
         # Path A: Cloud LLM via LangChain (OpenAI key present)
         if self.fallback_enabled:
             try:
@@ -288,7 +298,7 @@ class OllamaMLEngine(BaseMLEngine):
                 cloud_response = self.fallback_llm.invoke(messages)
                 return cloud_response.content.strip()
             except Exception as cloud_err:
-                print(f"[WARN] Cloud LLM failed: {cloud_err}. Falling back to local Ollama...")
+                logger.warning(f"Cloud LLM failed: {cloud_err}. Falling back to local Ollama...")
 
         # Path B: Local Ollama (no API key, or cloud failed)
         try:
@@ -299,5 +309,5 @@ class OllamaMLEngine(BaseMLEngine):
             )
             return response.get("response", "").strip()
         except Exception as local_err:
-            print(f"[ERROR] Local Ollama general response failed: {local_err}")
+            logger.exception(f"Local Ollama general response failed: {local_err}")
             return "I'm unable to answer right now. Please check that the Ollama container is running."

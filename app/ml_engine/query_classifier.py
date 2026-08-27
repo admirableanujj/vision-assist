@@ -20,6 +20,9 @@ __author__ = "Anujj Saxena"
 __license__ = "MIT"
 __version__ = "1.0.1"
 import json
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 class QueryClassifier:
     def __init__(self, ollama_client, model_name: str = "llama3"):
@@ -58,10 +61,10 @@ class QueryClassifier:
             
             # Safely parse structural string tokens back into native dictionary items
             parsed_result = json.loads(response.get("response", "{}"))
-            return {
-                "intent": parsed_result.get("intent", "general"),
-                "payload": parsed_result.get("extracted_target", user_query)
-            }
+            intent = parsed_result.get("intent", "general")
+            payload = parsed_result.get("extracted_target", user_query)
+            logger.info(f"Query classified as '{intent}' with payload: {str(payload)[:120]}")
+            return {"intent": intent, "payload": payload}
         except Exception as e:
-            print(f"[WARN] Intent engine fallback triggered: {e}")
+            logger.warning(f"Intent engine fallback triggered: {e}")
             return {"intent": "general", "payload": user_query}

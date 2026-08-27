@@ -19,6 +19,9 @@ import hashlib
 import uuid
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 __author__ = "Anujj Saxena"
 __license__ = "MIT"
@@ -86,14 +89,17 @@ class UserManager:
                 cur.execute(login_insert, (user_id, credential_string))
                 
             conn.commit()
+            logger.info(f"User registered successfully: {username} (id={user_id})")
             return True, "Registration successful!"
         except psycopg2.errors.UniqueViolation:
             if conn:
                 conn.rollback()
+            logger.warning(f"Registration failed - username exists: {username}")
             return False, "Username already exists."
         except Exception as e:
             if conn:
                 conn.rollback()
+            logger.exception(f"Registration database write failure for {username}: {e}")
             return False, f"Database write failure: {e}"
         finally:
             if conn:
@@ -123,9 +129,10 @@ class UserManager:
                     if self._verify_password(password, record['hashed_password']):
                         status = "success"
                         authenticated = True
+                        logger.info(f"User authenticated: {username} (id={user_id})")
             return authenticated
         except Exception as e:
-            print(f"[ERROR] Authentication pipeline exception: {e}")
+            logger.exception(f"Authentication pipeline exception for '{username}': {e}")
             return False
         finally:
             # Audit logins inside your user_login_history table
@@ -138,7 +145,7 @@ class UserManager:
                         )
                     conn.commit()
                 except Exception as audit_error:
-                    print(f"[WARN] Failed to write audit record: {audit_error}")
+                    logger.warning(f"Failed to write audit record for user {user_id}: {audit_error}")
             
             if conn:
                 conn.close()

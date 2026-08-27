@@ -23,6 +23,14 @@ import os
 import sys
 from .voice_base import VoiceEngineAC
 from gtts import gTTS
+from logging_config import get_logger
+import logging
+
+_base_logger = get_logger(__name__)
+
+
+def _make_adapter(base: logging.Logger, extra: dict | None = None) -> logging.LoggerAdapter:
+    return logging.LoggerAdapter(base, extra or {"component": "voice_tts"})
 
 class TextToSpeechConverter(VoiceEngineAC):
     """
@@ -32,10 +40,12 @@ class TextToSpeechConverter(VoiceEngineAC):
     def __init__(self, speech_rate: int = 165):
         self.speech_rate = speech_rate
         self.output_filename = "response_vocal.mp3"
+        # Create a LoggerAdapter to carry repeated context (e.g., user_id)
+        self.logger = _make_adapter(_base_logger)
         self.initialize_engine()
 
     def initialize_engine(self) -> None:
-        print("[INFO] TextToSpeech pipeline configured for browser-side streaming delivery.")
+        self.logger.info("TextToSpeech pipeline configured for browser-side streaming delivery.", extra={"speech_rate": self.speech_rate})
 
     def execute(self, response_text: str) -> str:
         """
@@ -54,7 +64,8 @@ class TextToSpeechConverter(VoiceEngineAC):
             tts = gTTS(text=response_text, lang='en', tld='com')
             tts.save(self.output_filename)
             
+            self.logger.info("Generated TTS audio file", extra={"path": self.output_filename})
             return self.output_filename
         except Exception as e:
-            print(f"[ERROR] Audio file generation failure: {e}")
+            self.logger.exception(f"Audio file generation failure: {e}", extra={"response_text": response_text, "speech_rate": self.speech_rate})
             return ""
