@@ -24,6 +24,9 @@ __version__ = "1.0.1"
 import os
 import random
 from .vision_base import BaseVisionEngine
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # Detections below this confidence score are discarded ("eliminate outlying" detections).
 DEFAULT_CONFIDENCE_THRESHOLD = 0.5
@@ -131,7 +134,7 @@ class FallbackVisionEngine(BaseVisionEngine):
     weights, or CUDA allocations fail to initialize.
     """
     def __init__(self):
-        print("[WARN] VisionAssist initialized FallbackVisionEngine. Running on Simulated Vision matrix.")
+        logger.warning("VisionAssist initialized FallbackVisionEngine. Running on Simulated Vision matrix.")
         # Common household objects to mock local identification loops
         self.simulated_pool = ["keys", "phone", "wallet", "sunglasses", "backpack"]
 
@@ -233,7 +236,11 @@ try:
                     return {"detections": [], "annotated_frame": None}
 
                 # conf= enforces the confidence cutoff at the ultralytics/NMS level.
+                import time as _time
+                _start = _time.time()
                 results = self.model.predict(frame, conf=self.confidence_threshold, verbose=False)
+                _elapsed = _time.time() - _start
+                logger.info(f"Inference completed in {_elapsed:.3f}s for {type(self).__name__}")
 
                 detections = []
                 for result in results:
@@ -245,11 +252,13 @@ try:
                             continue
                         class_id = int(box.cls[0])
                         x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        label_name = result.names[class_id]
                         detections.append({
-                            "label": result.names[class_id],
+                            "label": label_name,
                             "confidence": round(confidence, 4),
                             "box": (round(x1, 1), round(y1, 1), round(x2, 1), round(y2, 1)),
                         })
+                        logger.debug(f"Detected: {label_name} ({confidence:.2%})")
                 detections.sort(key=lambda d: d["confidence"], reverse=True)
 
                 # Draw straight from `detections` (see _draw_detections' docstring
@@ -261,7 +270,7 @@ try:
                 return {"detections": detections, "annotated_frame": annotated_frame}
 
             except Exception as e:
-                print(f"[WARN] {type(self).__name__} inference failed: {e!r}. Falling back to simulated detection.")
+                logger.warning(f"{type(self).__name__} inference failed: {e!r}. Falling back to simulated detection.")
                 return self._fallback.scan_frame(image_buffer)
 
     class YOLOVisionEngine(_UltralyticsScanMixin, BaseVisionEngine):
@@ -282,10 +291,11 @@ try:
             self._fallback = FallbackVisionEngine()
             try:
                 self.model = YOLO(self.weights_path)
-                print(f"[INFO] YOLOVisionEngine loaded '{self.weights_path}' (conf>={confidence_threshold}).")
+                logger.info(f"YOLOVisionEngine loaded '{self.weights_path}' (conf>={confidence_threshold}).")
             except Exception as e:
-                print(f"[WARN] Failed to load YOLO weights '{self.weights_path}': {e!r}. "
-                      f"YOLOVisionEngine will use simulated detections until this is fixed.")
+                logger.warning(
+                    f"Failed to load YOLO weights '{self.weights_path}': {e!r}. "
+                    f"YOLOVisionEngine will use simulated detections until this is fixed.")
                 self.model = None
 
     class YOLOEVisionEngine(_UltralyticsScanMixin, BaseVisionEngine):
@@ -306,11 +316,12 @@ try:
             try:
                 self.model = YOLOE(self.weights_path)
                 self.model.set_classes(self.classes)
-                print(f"[INFO] YOLOEVisionEngine loaded '{self.weights_path}' "
-                      f"with classes={self.classes} (conf>={confidence_threshold}).")
+                logger.info(
+                    f"YOLOEVisionEngine loaded '{self.weights_path}' with classes={self.classes} (conf>={confidence_threshold}).")
             except Exception as e:
-                print(f"[WARN] Failed to load YOLOE weights '{self.weights_path}': {e!r}. "
-                      f"YOLOEVisionEngine will use simulated detections until this is fixed.")
+                logger.warning(
+                    f"Failed to load YOLOE weights '{self.weights_path}': {e!r}. "
+                    f"YOLOEVisionEngine will use simulated detections until this is fixed.")
                 self.model = None
 
     # Which engine backs VisionTracker — config, not code, same pattern as
@@ -321,6 +332,6 @@ try:
     VisionTracker = _ENGINE_TYPES.get(_selected_type, YOLOVisionEngine)
 
 except ImportError as e:
-    print(f"[CRITICAL] Vision dependencies unavailable: {e}")
+    logger.critical(f"Vision dependencies unavailable: {e}")
     # Seamless substitution: App falls back cleanly to the mock engine
     VisionTracker = FallbackVisionEngine

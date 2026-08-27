@@ -31,6 +31,9 @@ from voice_engine.voice_tts import TextToSpeechConverter
 from vision_engine import FallbackVisionEngine
 from ml_engine.query_classifier import QueryClassifier
 from user_module.user_manager import UserManager  # <-- Imported your polished module
+from logging_config import get_logger
+
+logger = get_logger(__name__)
 
 # SYSTEM CONFIGURATION FLAGS
 VISION_ENABLED = True  # Set to False to disable the camera tracking system
@@ -41,7 +44,9 @@ st.set_page_config(page_title="VisionAssist L-F-A-I", page_icon="🔍", layout="
 # Initialize our core engine abstractions inside Streamlit's resource cache
 @st.cache_resource
 def boot_system_core():
+    logger.info("Booting core system components...")
     brain = OllamaMLEngine()
+    logger.info("Core system components initialized.")
     return (
         brain,
         TextToSpeechConverter(speech_rate=165),
@@ -95,6 +100,7 @@ def fetch_user_items(user_id: int) -> list:
     """Retrieves all registered tracked items for the active user from Postgres."""
     conn = user_mgr._get_connection()
     try:
+        logger.debug(f"Fetching items for user_id={user_id}")
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("""
                 SELECT item_name, description, last_modified_on 
@@ -104,6 +110,7 @@ def fetch_user_items(user_id: int) -> list:
             """, (user_id,))
             return cur.fetchall()
     except Exception as e:
+        logger.exception(f"Error fetching items from database for user_id={user_id}: {e}")
         st.error(f"Error fetching items from database: {e}")
         return []
     finally:
@@ -113,6 +120,7 @@ def register_db_item(user_id: int, item_name: str, description: str) -> bool:
     """Persists a new registered item into the Postgres database."""
     conn = user_mgr._get_connection()
     try:
+        logger.debug(f"Registering item '{item_name}' for user_id={user_id}")
         with conn.cursor() as cur:
             # Generate a clean system ID for the item asset
             item_id = f"item_{user_id}_{int(os.getpid())}_{item_name.replace(' ', '_')}"
@@ -122,8 +130,10 @@ def register_db_item(user_id: int, item_name: str, description: str) -> bool:
                 ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description, last_modified_on = CURRENT_TIMESTAMP;
             """, (item_id, user_id, item_name, description))
         conn.commit()
+        logger.info(f"Registered item '{item_name}' for user_id={user_id} (id={item_id})")
         return True
     except Exception as e:
+        logger.exception(f"Failed to register item '{item_name}' for user_id={user_id}: {e}")
         st.error(f"Failed to register item in database: {e}")
         return False
     finally:
@@ -157,9 +167,11 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.username = login_user
                 st.session_state.user_id = u_rec["id"]
+                logger.info(f"User '{login_user}' authenticated (id={u_rec['id']}).")
                 st.success(f"Access granted! Welcoming session token for {login_user}.")
                 st.rerun()
             else:
+                logger.warning(f"Failed authentication attempt for username '{login_user}'")
                 st.error("Invalid username or password credentials. Please retry.")
                 
     with tab_register:
@@ -168,8 +180,10 @@ if not st.session_state.authenticated:
         if st.button("Register Account Credentials", use_container_width=True):
             success, msg = user_mgr.register_user(reg_user, reg_pass)
             if success:
+                logger.info(f"New user registered: '{reg_user}'")
                 st.success(f"{msg} You can now log in using the 'Sign In' tab.")
             else:
+                logger.warning(f"Registration failed for '{reg_user}': {msg}")
                 st.error(msg)
                 
     st.stop()  # Stop rendering dashboard content until verified
@@ -186,6 +200,7 @@ st.caption(f"Authenticated Session: {st.session_state.username} | Powered by Whi
 with st.sidebar:
     st.markdown(f"**👤 Connected as:** `{st.session_state.username}`")
     if st.button("Logout of Workspace", use_container_width=True):
+        logger.info(f"User '{st.session_state.username}' logged out (id={st.session_state.user_id}).")
         st.session_state.authenticated = False
         st.session_state.user_id = None
         st.session_state.username = None
@@ -231,9 +246,10 @@ with col1:
                 st.success(f"🗣️ **Whisper Transcribed:** \"{transcribed_text}\"")
                 
                 with st.spinner("Analyzing intent signatures..."):
-                    classification = router.classify(transcribed_text)             
+                    classification = router.classify(transcribed_text)
                     intent = classification["intent"]
                     payload = classification["payload"]
+                    logger.info(f"Intent classified: {intent} | Payload: {str(payload)[:120]}")
                     
                 st.caption(f"🎯 **System Intent Routing Detected:** `{intent.upper()}`")
 
@@ -245,24 +261,29 @@ with col1:
                         db_items_context = {item["item_name"]: item["description"] for item in user_db_items}
                         
                         ml_response = ml_brain.generate_response(transcribed_text, str(db_items_context))
+                        logger.info(f"[locate] Generated response: {str(ml_response)[:200]}")
                         st.info(f"🤖 **VisionCore-ML [Locate Mode]:** {ml_response}")
 
                 elif intent == "note":
+                    logger.info(f"[note] Note payload: {payload}")
                     st.success(f"📝 **Note-Taking Module Triggered:** Logging payload: \"{payload}\"")
                     ml_response = f"I've noted that down for you: {payload}"
 
                 elif intent == "alarm":
+                    logger.info(f"[alarm] Alarm scheduling payload: {payload}")
                     st.warning(f"⏰ **Alarm/Scheduling Triggered:** Setting event parameters for: \"{payload}\"")
                     ml_response = f"Handling your scheduling request for {payload} now."
 
                 else: # intent == "general"
                     with st.spinner("Engaging LangChain cloud backup pipelines for general inquiry..."):
                         ml_response = ml_brain.generate_general_response(transcribed_text)
+                        logger.info(f"[general] Cloud/general response generated")
                         st.info(f"🌐 **Cloud Hybrid Assistant [General Mode]:** {ml_response}")
 
                 # Deliver Audio back to user browser
                 audio_output_path = speaker.execute(ml_response)
                 if audio_output_path and os.path.exists(audio_output_path):
+                    logger.info(f"Playing audio response: {audio_output_path}")
                     st.audio(audio_output_path, format="audio/mp3", autoplay=True)
             else:
                 st.error(f"❌ Transcription Failure: {transcribed_text}")
@@ -288,6 +309,7 @@ with col2:
             tracker = get_vision_engine(engine_choice)
         else:
             with st.spinner(f"Loading {engine_choice}..."):
+                logger.info(f"Switching vision engine to: {engine_choice}")
                 tracker = get_vision_engine(engine_choice)
     else:
         tracker = None
@@ -312,9 +334,14 @@ with col2:
             frame_hash = hashlib.md5(cam_frame.getvalue()).hexdigest() + f"|{engine_choice}"
             if st.session_state.get("last_scanned_frame_hash") != frame_hash:
                 st.session_state["last_scanned_frame_hash"] = frame_hash
+                logger.info(f"Scanning new frame (hash={frame_hash[:8]}...) with engine {engine_choice}")
                 with st.spinner("Scanning frame targets..."):
                     scan_result = tracker.scan_frame(cam_frame)
                 st.session_state["last_scan_result"] = scan_result
+                detection_summary = ", ".join(
+                    f"{d['label']}({d['confidence']:.0%})" for d in scan_result.get("detections", [])
+                )
+                logger.info(f"Frame scan complete: {len(scan_result.get('detections', []))} detections - {detection_summary}")
                 for d in scan_result["detections"]:
                     desc = "Detected in live workspace sweep (Just now)"
                     register_db_item(st.session_state.user_id, d["label"].lower(), desc)
