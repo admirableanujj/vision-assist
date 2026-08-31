@@ -36,8 +36,13 @@ def run_migrations_and_seeding():
     db_host = "vision_assist_db"
     db_name = os.getenv("POSTGRES_DB", "vision_assist")
     db_user = os.getenv("POSTGRES_USER", "postgres")
-    db_password = os.getenv("POSTGRES_PASSWORD", "")
-
+    # Safely check for the secret file path first
+    secret_path = "/run/secrets/postgres_password"
+    if os.path.exists(secret_path):
+        with open(secret_path, "r") as f:
+            db_password = f.read().strip()
+    else:
+        db_password = os.getenv("POSTGRES_PASSWORD", "")
     # 1. Connect to PostgreSQL
     max_retries = 10
     conn = None

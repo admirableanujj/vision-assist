@@ -13,7 +13,28 @@ from logging_config import get_logger
 # Orchestrator runs non-interactively inside containers — avoid console spam
 logger = get_logger(__name__, console=False)
 
+def load_docker_secrets():
+    """Reads Docker secret files and injects them safely into os.environ at runtime."""
+    secrets_map = {
+        "/run/secrets/postgres_password": "POSTGRES_PASSWORD",
+        "/run/secrets/qdrant_api_key": "QDRANT_API_KEY"  # Map path to target env variable
+    }
+    
+    for secret_path, env_name in secrets_map.items():
+        if os.path.exists(secret_path):
+            try:
+                with open(secret_path, "r") as f:
+                    # Strip any hidden Windows/Linux newlines and trailing spaces
+                    os.environ[env_name] = f.read().strip()
+                logger.info(f"[INFO] Successfully loaded secret into {env_name} from {secret_path}")
+            except Exception as e:
+                logger.error(f"[ERROR] Failed to read secret at {secret_path}: {e}")
+        else:
+            logger.info(f"[INFO] No secret file at {secret_path}. Using fallback environment string.")
+
+
 def main():
+    load_docker_secrets()
     logger.info("[SYSTEM] Running database precheck and migrations...")
     try:
         run_migrations_and_seeding()
