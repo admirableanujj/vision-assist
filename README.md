@@ -68,8 +68,13 @@ Sensitive credentials are injected via Docker secrets (files under `./secrets/`,
 ```bash
 mkdir -p secrets
 
-# PostgreSQL password (plaintext)
-printf '%s' 'my_secure_password' > secrets/postgres_password.txt
+# PostgreSQL password (base64-encoded — see note below)
+printf '%s' 'my_secure_password' | base64> secrets/postgres_password.txt
+
+> **Base64 caveat:** Postgres reads the secret file **verbatim** — it does *not*
+> decode base64. So the effective login password is the encoded string itself
+> (e.g. `bXlfc2VjdXJlX3Bhc3N3b3Jk`), not `my_secure_password`. If you prefer to
+> log in with the plaintext value, store the plaintext directly in the file.
 
 # Qdrant API key (any strong random string)
 python3 -c "import secrets; print(secrets.token_urlsafe(32))" | tr -d '\n' > secrets/qdrant_api_key.txt
@@ -148,7 +153,7 @@ Set `VISION_MODEL_TYPE=yoloe` to switch to `YOLOEVisionEngine`, which detects ar
 
 ```bash
 VISION_MODEL_TYPE=yoloe
-# Optional — narrows detection to just these classes:
+# Optional — narrows detection to just these classes instead of the ~297-class default:
 VISION_CUSTOM_CLASSES=keys,wallet,sunglasses,phone,backpack
 
 ```
