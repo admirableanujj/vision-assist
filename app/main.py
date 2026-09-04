@@ -1,11 +1,16 @@
+# app/main.py
 """
 VisionCore Orchestrator
 
 Consolidates system startup by running database migrations/seeding 
 and launching the Streamlit interface programmatically.
+
+Usage:
+    python app/main.py
 """
 import os
 import sys
+import time
 import subprocess
 from precheck_db import run_migrations_and_seeding
 from logging_config import get_logger
@@ -23,8 +28,8 @@ def load_docker_secrets():
     for secret_path, env_name in secrets_map.items():
         if os.path.exists(secret_path):
             try:
-                with open(secret_path, "r") as f:
-                    # Strip any hidden Windows/Linux newlines and trailing spaces
+                with open(secret_path, "r", encoding="utf-8") as f:
+                    # Strip hidden Windows/Linux newlines and trailing whitespace
                     os.environ[env_name] = f.read().strip()
                 logger.info(f"[INFO] Successfully loaded secret into {env_name} from {secret_path}")
             except Exception as e:
@@ -42,6 +47,10 @@ def main():
         logger.exception(f"Database precheck/migration failed: {e}")
         sys.exit(1)
     
+    # Ensure current working directory is anchored to the app directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(script_dir)
+
     logger.info("[SYSTEM] Starting Streamlit interface...")
     
     # Using sys.executable ensures we use the exact same Python binary and path 
@@ -52,6 +61,7 @@ def main():
         "--server.address=0.0.0.0"
     ]
     
+    process = None
     try:
         # PYTHONFAULTHANDLER=1 makes CPython dump the active Python-level stack
         # to stderr when a fatal native signal (SIGSEGV, SIGABRT, SIGFPE, SIGBUS)
@@ -70,16 +80,22 @@ def main():
         # makes `docker inspect`'s ExitCode useless for diagnosing crashes.
         returncode = process.wait()
         if returncode != 0:
-            logger.fatal(f"Streamlit exited with code {returncode}.")
+            logger.fatal(f"Streamlit exited unexpectedly with code {returncode}.")
         sys.exit(returncode)
 
     except KeyboardInterrupt:
-        logger.info("Shutting down gracefully via KeyboardInterrupt")
-        if 'process' in locals():
+        logger.info("Shutdown requested via KeyboardInterrupt. Terminating child processes...")
+        if process and process.poll() is None:
             process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
         sys.exit(0)
     except Exception as e:
-        logger.exception(f"Streamlit failed to launch: {e}")
+        logger.exception(f"Streamlit failed to launch or crashed unexpectedly: {e}")
+        if process and process.poll() is None:
+            process.kill()
         sys.exit(1)
 
 if __name__ == "__main__":
