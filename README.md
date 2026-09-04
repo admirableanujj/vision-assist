@@ -40,7 +40,7 @@ POSTGRES_HOST=vision_assist_db
 ```
 
 The Postgres **password** and the Qdrant **API key** are not stored in `.env`.
-They are managed as Docker secrets — see [Secrets](https://www.google.com/search?q=%23secrets) below.
+They are managed as Docker secrets — see [Secrets](#secrets) below.
 
 > **Note:** The Postgres credentials are only applied when the database is **first initialized**. If you change the user, password, or DB name after the `postgres_storage` volume already exists, the new values are ignored and you'll get `password authentication failed`.
 > To wipe the volume and re-initialize:
