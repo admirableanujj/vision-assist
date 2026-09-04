@@ -73,6 +73,31 @@ def test_vector_db():
     except Exception as e:
         print(f"❌ Error initializing Vector DB: {e}")
 
+def test_embeddings():
+    print_header("Multimodal Embeddings (CLIP / sentence-transformers)")
+    try:
+        import sentence_transformers
+        print(f"✔ sentence-transformers Version: {sentence_transformers.__version__}")
+    except ImportError:
+        print("❌ sentence-transformers is missing!")
+        return
+
+    try:
+        import os
+        from sentence_transformers import SentenceTransformer
+
+        model_name = os.getenv("EMBEDDING_MODEL_NAME", "clip-ViT-B-32")
+        print(f"🔄 Loading pre-cached embedding model '{model_name}'...")
+        model = SentenceTransformer(model_name)
+        dim = model.get_sentence_embedding_dimension()
+        print(f"✔ Model loaded successfully! (embedding dim: {dim})")
+
+        print("🔄 Encoding a sanity text sample...")
+        vec = model.encode("a black leather wallet", normalize_embeddings=True)
+        print(f"✔ Text embedding produced (length {len(vec)}). CLIP encoder operational.")
+    except Exception as e:
+        print(f"❌ Error during embedding model test: {e}")
+
 if __name__ == "__main__":
     print("==================================================")
     print("🚀 VISION ASSIST ENVIRONMENT VERIFICATION SCRIPT 🚀")
@@ -82,7 +107,8 @@ if __name__ == "__main__":
     test_pytorch()
     test_computer_vision()
     test_vector_db()
-    
+    test_embeddings()
+
     print("\n==================================================")
     print("🏁 Diagnostics Complete!")
     print("==================================================\n")
