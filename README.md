@@ -1,6 +1,3 @@
-Here is the fully updated and detailed `README.md`. It incorporates all the fixes for Docker networking, secure secrets handling, Postgres initialization, and the automated Streamlit startup via `main.py`.
-
-```markdown
 # Vision Assist
 
 An AI-powered voice-vision assistant that combines real-time object detection, speech I/O, and LLM reasoning — running fully inside Docker.
