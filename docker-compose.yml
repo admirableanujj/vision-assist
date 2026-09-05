@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   app:
     build:
@@ -9,35 +11,28 @@ services:
       - logs_storage:/workspace/logs
     environment:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OLLAMA_HOST=http://vision_assist_llm_local:11434
+      - OLLAMA_HOST=vision_assist_llm_local
+      - POSTGRES_HOST=vision_assist_db
       - POSTGRES_USER=${POSTGRES_USER}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - POSTGRES_DB=${POSTGRES_DB}
-      # Vision engine config. Deliberately NOT given a hardcoded value default
-      # here (e.g. `:-yolo26n.pt`) — YOLO_MODEL_PATH's correct default differs
-      # per engine (yolo26n.pt for YOLO, yoloe-26n-seg.pt for YOLOE), and a
-      # Compose-level default would win for *both* regardless of which engine
-      # is selected, since a present-but-empty env var is not the same as an
-      # absent one to a naive os.getenv(key, default) check. Left empty here;
-      # vision_engine.py's `weights_path or os.getenv(...) or DEFAULT_*`
-      # chains correctly apply the right per-engine default when this is "".
       - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-}
       - VISION_MODEL_TYPE=${VISION_MODEL_TYPE:-yolo}
       - VISION_CUSTOM_CLASSES=${VISION_CUSTOM_CLASSES:-}
+    secrets:
+      - postgres_password
+      - qdrant_api_key
     ports:
-      - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
+      - "8501:8501"
     stdin_open: true
     tty: true
     depends_on:
-      - ollama
-      - postgres
-      - qdrant
-    # Run the precheck migration script before starting Streamlit
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+      qdrant:
+        condition: service_healthy
     command: python main.py
-    
-    # ... rest of your service configuration (volumes, ports, depends_on)  
-    #devices:
-    #  - /dev/snd:/dev/snd  # Maps host sound card layers directly to the container
 
   ollama:
     image: ollama/ollama:latest
@@ -48,13 +43,12 @@ services:
       - ollama_storage:/root/.ollama
 
   postgres:
-    image: postgres:16-alpine  # lightweight Alpine-based Postgres image
+    image: postgres:16-alpine
     container_name: vision_assist_db
-    hostname: db  # reachable as "db" on the compose network
+    hostname: vision_assist_db
     restart: unless-stopped
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
-      # Password comes from a Docker secret file instead of a plain env var
       - POSTGRES_PASSWORD_FILE=/run/secrets/postgres_password
       - POSTGRES_DB=${POSTGRES_DB}
     secrets:
@@ -63,34 +57,32 @@ services:
       - "5432:5432"
     volumes:
       - postgres_storage:/var/lib/postgresql/data
-    networks:
-      default:
-        aliases:
-          - db
-          - postgres
-          - vision_assist_db          
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-vision_assist}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   qdrant:
-    image: qdrant/qdrant:latest  # vector database
+    image: qdrant/qdrant:latest
     container_name: vision_assist_qdrant
-    hostname: qdrant  # reachable as "qdrant" on the compose network
+    hostname: qdrant
     restart: unless-stopped
-    # Qdrant has no native *_FILE support, so read the API key from the mounted
-    # secret and export it before launching the server.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - 'export QDRANT__SERVICE__API_KEY="$(cat /run/secrets/qdrant_api_key)"; exec ./entrypoint.sh'
     secrets:
       - qdrant_api_key
     ports:
-      - "6333:6333"  # REST / HTTP API + dashboard
+      - "6333:6333"  # REST API
       - "6334:6334"  # gRPC API
     volumes:
       - qdrant_storage:/qdrant/storage
-    networks:
-      default:
-        aliases:
-          - qdrant
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
 volumes:
   ollama_storage:
@@ -100,6 +92,6 @@ volumes:
 
 secrets:
   postgres_password:
-    file: ./secrets/postgres_password.txt  # base64-encoded password (see README)
+    file: ./secrets/postgres_password.txt
   qdrant_api_key:
-    file: ./secrets/qdrant_api_key.txt  # Qdrant API key (see README)
+    file: ./secrets/qdrant_api_key.txt
