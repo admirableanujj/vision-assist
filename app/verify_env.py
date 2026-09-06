@@ -62,6 +62,18 @@ def test_computer_vision():
         print(f"❌ Error during vision processing test: {e}")
 
 def test_vector_db():
+    print_header("Vector Database Backend (ChromaDB)")
+    try:
+        import chromadb
+        print(f"✔ ChromaDB Version: {chromadb.__version__}")
+        client = chromadb.EphemeralClient()
+        print("✔ Client initialization successful! Memory storage working.")
+    except ImportError:
+        print("❌ ChromaDB is missing!")
+    except Exception as e:
+        print(f"❌ Error initializing Vector DB: {e}")
+
+def test_qdrant_db():
     print_header("Vector Database Backend (Qdrant)")
     try:
         from importlib.metadata import version, PackageNotFoundError
@@ -163,6 +175,7 @@ if __name__ == "__main__":
     test_pytorch()
     test_computer_vision()
     test_vector_db()
+    test_qdrant_db()
     test_embeddings()
 
     print("\n==================================================")
