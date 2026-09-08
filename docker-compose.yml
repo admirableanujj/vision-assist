@@ -24,10 +24,21 @@ services:
       - YOLO_MODEL_PATH=${YOLO_MODEL_PATH:-}
       - VISION_MODEL_TYPE=${VISION_MODEL_TYPE:-yolo}
       - VISION_CUSTOM_CLASSES=${VISION_CUSTOM_CLASSES:-}
+      # Vector store (CLIP embeddings -> Qdrant). The API key is read from the
+      # same Docker secret the qdrant service uses (no plaintext key in env),
+      # via QDRANT_API_KEY_FILE — mirroring POSTGRES_PASSWORD_FILE above.
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_API_KEY_FILE=/run/secrets/qdrant_api_key
+      - QDRANT_COLLECTION=${QDRANT_COLLECTION:-item_embeddings}
+      - EMBEDDING_MODEL_NAME=${EMBEDDING_MODEL_NAME:-clip-ViT-B-32}
     ports:
       - "8501:8501"  # <-- FIX: Maps Streamlit's default port out to your Windows host browser
     stdin_open: true
     tty: true
+    # Mount the Qdrant API-key secret so the app authenticates to Qdrant with
+    # the same key the qdrant service enforces.
+    secrets:
+      - qdrant_api_key
     depends_on:
       - ollama
       - postgres

@@ -25,7 +25,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 # Clean, package-level module imports
-from ml_engine import OllamaMLEngine
+from ml_engine import OllamaMLEngine, QdrantItemStore
 from voice_engine.voice_stt import SpeechToTextConverter
 from voice_engine.voice_tts import TextToSpeechConverter
 from vision_engine import FallbackVisionEngine
@@ -56,6 +56,49 @@ def boot_system_core():
     )
 
 ml_brain, speaker, whisper_stt, router, user_mgr = boot_system_core()
+
+
+@st.cache_resource
+def get_vector_store():
+    """
+    Best-effort CLIP + Qdrant item store for semantic (text/image) indexing and
+    search. Built lazily and defensively: if Qdrant is unreachable or the CLIP
+    stack is unavailable, this returns None and registration still works — it
+    just skips vector indexing rather than breaking the app.
+    """
+    try:
+        store = QdrantItemStore()
+        logger.info(f"QdrantItemStore ready (collection '{store.collection}').")
+        return store
+    except Exception as e:
+        logger.warning(f"Vector store unavailable — semantic indexing disabled: {e}")
+        return None
+
+
+vector_store = get_vector_store()
+
+
+def _detection_crop(cam_frame, box):
+    """
+    Best-effort crop of the captured frame to a detection's bounding box, so the
+    CLIP image embedding describes the object rather than the whole scene.
+    Returns an RGB ndarray (which the embedder accepts) or falls back to the
+    original frame on any error / when no box is available.
+    """
+    try:
+        if not box:
+            return cam_frame
+        import numpy as np
+        import cv2
+        raw = np.frombuffer(cam_frame.getvalue(), np.uint8)
+        img = cv2.imdecode(raw, cv2.IMREAD_COLOR)  # BGR
+        x1, y1, x2, y2 = (max(0, int(v)) for v in box)
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            return cam_frame
+        return cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+    except Exception:
+        return cam_frame
 
 
 def get_vision_engine(engine_choice: str):
@@ -116,8 +159,13 @@ def fetch_user_items(user_id: int) -> list:
     finally:
         conn.close()
 
-def register_db_item(user_id: int, item_name: str, description: str) -> bool:
-    """Persists a new registered item into the Postgres database."""
+def register_db_item(user_id: int, item_name: str, description: str, image=None) -> bool:
+    """
+    Persists a new registered item into the Postgres database and, best-effort,
+    indexes its text label and (optional) image into Qdrant for semantic search.
+    `image` may be a Streamlit UploadedFile, PIL image, ndarray, bytes, or path;
+    pass None (the default) to index the label only.
+    """
     conn = user_mgr._get_connection()
     try:
         logger.debug(f"Registering item '{item_name}' for user_id={user_id}")
@@ -131,6 +179,20 @@ def register_db_item(user_id: int, item_name: str, description: str) -> bool:
             """, (item_id, user_id, item_name, description))
         conn.commit()
         logger.info(f"Registered item '{item_name}' for user_id={user_id} (id={item_id})")
+
+        # Mirror the item into the vector store for text/image semantic search.
+        # Best-effort: a Qdrant/CLIP hiccup must never fail the DB registration.
+        if vector_store is not None:
+            try:
+                vector_store.index_item(
+                    item_id=item_id,
+                    owner_id=user_id,
+                    item_name=item_name,
+                    description=description,
+                    image=image,
+                )
+            except Exception as ve:
+                logger.warning(f"Vector indexing failed for {item_id}: {ve}")
         return True
     except Exception as e:
         logger.exception(f"Failed to register item '{item_name}' for user_id={user_id}: {e}")
@@ -138,6 +200,49 @@ def register_db_item(user_id: int, item_name: str, description: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+def _render_search_results(results: list):
+    """
+    Render semantic-search hits. An item can have both a text and an image point,
+    so collapse to one row per item_id (best score wins) and reuse whatever
+    thumbnail was seen for that item so the picture shows even when the text
+    point ranked highest.
+    """
+    if not results:
+        st.caption("No matching belongings found.")
+        return
+
+    best = {}
+    thumbs = {}
+    for r in results:
+        iid = r.get("item_id") or r.get("id")
+        if r.get("thumbnail_b64") and iid not in thumbs:
+            thumbs[iid] = r["thumbnail_b64"]
+        if iid not in best or r["score"] > best[iid]["score"]:
+            best[iid] = r
+
+    ranked = sorted(best.values(), key=lambda r: r["score"], reverse=True)
+    for r in ranked:
+        iid = r.get("item_id") or r.get("id")
+        col_img, col_txt = st.columns([1, 4])
+        with col_img:
+            thumb = thumbs.get(iid) or r.get("thumbnail_b64")
+            if thumb:
+                try:
+                    import base64
+                    st.image(base64.b64decode(thumb), width=96)
+                except Exception:
+                    st.caption("🖼️")
+            else:
+                st.caption("🔤 text-only")
+        with col_txt:
+            st.markdown(
+                f"**{str(r.get('item_name', '?')).capitalize()}** — {r['score']:.0%} match  \n"
+                f"{r.get('description', '')}  \n"
+                f"<sub>matched on {r.get('modality', '?')}</sub>",
+                unsafe_allow_html=True,
+            )
 
 
 # --- SESSION AUTHENTICATION GUARD ---
@@ -344,7 +449,14 @@ with col2:
                 logger.info(f"Frame scan complete: {len(scan_result.get('detections', []))} detections - {detection_summary}")
                 for d in scan_result["detections"]:
                     desc = "Detected in live workspace sweep (Just now)"
-                    register_db_item(st.session_state.user_id, d["label"].lower(), desc)
+                    # Index the object crop (falls back to the full frame if the
+                    # engine didn't return a box, e.g. the mock/fallback engine).
+                    register_db_item(
+                        st.session_state.user_id,
+                        d["label"].lower(),
+                        desc,
+                        image=_detection_crop(cam_frame, d.get("box")),
+                    )
 
             # Render from the cached result for this photo — the script reruns
             # naturally on every interaction anyway (e.g. the inventory table
@@ -367,6 +479,67 @@ with col2:
                     st.caption("No registered tracking assets found in the current scene context.")
     else:
         st.warning("⚠️ Vision Engine Module has been set to disabled in application settings. Object scanning via web camera is inactive.")
+
+# --- SEMANTIC SEARCH: FIND BELONGINGS BY TEXT OR PHOTO ---
+st.markdown("---")
+st.subheader("🔎 Search Your Belongings")
+
+if vector_store is None:
+    st.info(
+        "Semantic search is offline — the vector store (Qdrant + CLIP) is "
+        "unavailable. Registration still works; search will light up once the "
+        "Qdrant service and embedding model are reachable."
+    )
+else:
+    st.caption(
+        "CLIP puts text and images in the same space, so a typed description can "
+        "find items you registered by photo, and vice versa."
+    )
+    tab_text, tab_photo = st.tabs(["🔤 By text", "📷 By photo"])
+
+    with tab_text:
+        text_query = st.text_input(
+            "Describe what you're looking for",
+            placeholder="e.g. black leather wallet",
+            key="sem_search_text",
+        )
+        if st.button("Search", key="sem_search_text_btn", use_container_width=True):
+            if text_query.strip():
+                with st.spinner("Searching your belongings..."):
+                    try:
+                        results = vector_store.search_by_text(
+                            text_query.strip(),
+                            owner_id=st.session_state.user_id,
+                            limit=10,
+                        )
+                        logger.info(f"[search:text] '{text_query.strip()}' -> {len(results)} hits")
+                        _render_search_results(results)
+                    except Exception as e:
+                        logger.exception(f"Text search failed: {e}")
+                        st.error(f"Search failed: {e}")
+            else:
+                st.warning("Type something to search for.")
+
+    with tab_photo:
+        photo_query = st.file_uploader(
+            "Upload a photo of the item to find look-alikes you've registered",
+            type=["png", "jpg", "jpeg"],
+            key="sem_search_photo",
+        )
+        if photo_query is not None:
+            st.image(photo_query, width=160, caption="Query image")
+            with st.spinner("Matching against your registered belongings..."):
+                try:
+                    results = vector_store.search_by_image(
+                        photo_query,
+                        owner_id=st.session_state.user_id,
+                        limit=10,
+                    )
+                    logger.info(f"[search:image] uploaded photo -> {len(results)} hits")
+                    _render_search_results(results)
+                except Exception as e:
+                    logger.exception(f"Image search failed: {e}")
+                    st.error(f"Search failed: {e}")
 
 # --- INVENTORY FOOTPRINT LOG ---
 st.markdown("---")

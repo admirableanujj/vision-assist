@@ -30,8 +30,10 @@ Dependencies:
     torch
     pillow (pulled in by sentence-transformers)
 
+__original_author__ = "Venkata Balaji Yadalla"
 __license__ = "MIT"
 """
+__author__ = "Venkata Balaji Yadalla"
 __license__ = "MIT"
 __version__ = "1.0.0"
 
