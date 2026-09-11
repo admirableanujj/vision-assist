@@ -34,8 +34,6 @@ services:
     tty: true
     # Mount the Qdrant API-key secret so the app authenticates to Qdrant with
     # the same key the qdrant service enforces.
-    secrets:
-      - qdrant_api_key
     depends_on:
       postgres:
         condition: service_healthy
