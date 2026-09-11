@@ -1,3 +1,4 @@
+#app/precheck_db.py
 """
 Database Schema Precheck & Seeding Migration Script
 
@@ -33,12 +34,18 @@ def _hash_password(password: str, salt: str) -> str:
     return f"{salt}:{hashed}"
 
 def run_migrations_and_seeding():
-    db_host = "vision_assist_db"
+    db_host = os.getenv("POSTGRES_HOST", "vision_assist_db")
     db_name = os.getenv("POSTGRES_DB", "vision_assist")
     db_user = os.getenv("POSTGRES_USER", "postgres")
-    db_password = os.getenv("POSTGRES_PASSWORD", "")
+    # Safely check for the secret file path first
+    secret_path = "/run/secrets/postgres_password"
+    if os.path.exists(secret_path):
+        with open(secret_path, "r") as f:
+            db_password = f.read().strip()
+    else:
+        db_password = os.getenv("POSTGRES_PASSWORD", "postgres")
 
-    # 1. Connect to PostgreSQL
+    # 1. Connect to PostgreSQL with retry loop
     max_retries = 10
     conn = None
     for i in range(max_retries):
@@ -52,8 +59,8 @@ def run_migrations_and_seeding():
             )
             logger.info("Database link verified.")
             break
-        except psycopg2.OperationalError:
-            logger.warning(f"Database connection attempt {i+1}/{max_retries} failed. Retrying...")
+        except psycopg2.OperationalError as err:
+            logger.warning(f"Database connection attempt {i+1}/{max_retries} failed ({err}). Retrying in 2s...")
             time.sleep(2)
 
     if not conn:
@@ -302,18 +309,20 @@ def run_migrations_and_seeding():
         conn.close()
 
 def verify_ollama_model(model_name="llama3"):
+    ollama_host = os.getenv("OLLAMA_HOST", "vision_assist_llm_local")
+    endpoint = f"http://{ollama_host}:11434/api/tags"
     try:
-        response = requests.get("http://vision_assist_llm_local:11434/api/tags", timeout=2)
+        response = requests.get(endpoint, timeout=3)
         if response.status_code == 200:
             models = [m['name'] for m in response.json().get('models', [])]
             # Match exact or tag-less (e.g. 'llama3:latest' or 'llama3')
             if any(model_name in m for m in models):
                 logger.info(f"Local LLM status check: '{model_name}' is downloaded and ready.")
                 return True
-            logger.warning(f"Local model '{model_name}' is missing on the Ollama instance.")
+            logger.warning(f"Local model '{model_name}' is missing on the Ollama instance ({endpoint}).")
             return False
-    except requests.exceptions.ConnectionError:
-        logger.error("Cannot reach the Ollama service container.")
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Cannot reach the Ollama service container at {endpoint}: {e}")
     return False
 
 if __name__ == "__main__":
