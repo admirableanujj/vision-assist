@@ -17,7 +17,7 @@ Four Docker services (`docker-compose.yml`), credentials via `.env` + Docker sec
 | `app` | `vision_assist_app` | 8501 | Streamlit app (runs `python main.py`) |
 | `ollama` | `vision_assist_llm_local` | 11434 | Local LLM (llama3) |
 | `postgres` | `vision_assist_db` | 5432 | User auth + item persistence (hostname `db`) |
-| `qdrant` | `vision_assist_qdrant` | 6333/6334 | Vector DB — **not wired into any application code yet**, infra-only |
+| `qdrant` | `vision_assist_qdrant` | 6333/6334 | Vector DB backing CLIP-based semantic item search (see Key Design Patterns) |
 
 ```bash
 # Requires .env (OPENAI_API_KEY, POSTGRES_USER/PASSWORD/DB) and secrets/ (see README.md)
@@ -28,7 +28,7 @@ docker exec -it vision_assist_app bash
 docker exec -it vision_assist_llm_local ollama pull llama3
 
 # Verify environment
-python verify_env.py   # PyTorch, OpenCV, YOLO, ChromaDB, API key
+python verify_env.py   # PyTorch, OpenCV, YOLO, ChromaDB, Qdrant, CLIP embeddings, API key
 python test_env.py     # quick CV matrix check
 ```
 
@@ -74,10 +74,13 @@ vision-assist/
 │   │   └── user_manager.py       # UserManager — Postgres-backed register/authenticate (salted SHA-256)
 │   ├── .streamlit/
 │   │   └── config.toml           # fileWatcherType="none" — dev-mode hot-reload disabled, see Key Design Patterns
+│   ├── logging_config.py         # get_logger() factory — console + rotating file handler, used across app.py/ml_engine
 │   ├── ml_engine/
 │   │   ├── ml_base_engine.py     # ABC: tokenize_text(), generate_response()
 │   │   ├── ml_engine.py          # OllamaMLEngine — local LLM + OpenAI cloud fallback
-│   │   └── query_classifier.py   # Intent routing via Ollama structured JSON
+│   │   ├── query_classifier.py   # Intent routing via Ollama structured JSON
+│   │   ├── embedding_engine.py   # CLIPEmbeddingEngine (clip-ViT-B-32 via sentence-transformers) — text+image → 512-d vectors
+│   │   └── vector_store.py       # QdrantItemStore — indexes/searches items in Qdrant using CLIPEmbeddingEngine
 │   ├── voice_engine/
 │   │   ├── voice_base.py         # ABC: initialize_engine(), execute()
 │   │   ├── voice_stt.py          # Whisper (OpenAI API) → Faster-Whisper (offline fallback)
@@ -110,7 +113,7 @@ vision-assist/
 | `reminders` | Scheduled reminder records | No |
 | `alerts` | Real-time breach/zone alert log | No |
 | `query_logs` | LLM query trace (intent, found, latency_ms) | No |
-| `item_embeddings` | Vector embeddings per item (for Qdrant parity) | No — Qdrant itself isn't called from app code either |
+| `item_embeddings` | Vector embeddings per item (Postgres table) | No — this Postgres table is still unwritten, but the concept it modeled is now live in **Qdrant's own** `item_embeddings` collection instead (see Key Design Patterns) — the two are separate stores, not kept in sync |
 
 ### Request Flow
 
@@ -130,9 +133,14 @@ User speaks → st.audio_input()
   → st.audio(..., autoplay=True)
 
 User takes photo → st.camera_input()
-  → get_vision_engine(engine_choice)      # cached per YOLO/YOLOE choice, both pre-warmed at login
+  → get_vision_engine(engine_choice)      # one engine at a time, session_state-cached — see Key Design Patterns
   → tracker.scan_frame(cam_frame)         # detections + annotated_frame (custom-drawn, not Results.plot())
-  → register_db_item(...) per detection   # persisted to Postgres `items`
+  → register_db_item(...) per detection   # persisted to Postgres `items`, then best-effort mirrored into Qdrant
+
+User types or uploads a photo in "🔎 Search Your Belongings"
+  → CLIPEmbeddingEngine.embed_text()/.embed_image()   # query → 512-d vector
+  → QdrantItemStore.search_by_text()/.search_by_image()   # filtered to owner_id, TEXT+IMAGE points searched together
+  → _render_search_results()              # dedupes hits per item_id, shows thumbnail + score
 ```
 
 ### Key Design Patterns
@@ -147,7 +155,9 @@ User takes photo → st.camera_input()
 - `YOLOVisionEngine` resolves its weights file the same way `OllamaMLEngine` resolves its host: constructor arg > `YOLO_MODEL_PATH` env var > hardcoded default (`DEFAULT_LOCAL_WEIGHTS = "yolo26n.pt"`) — swapping to a bigger model in a cloud deployment is a config change, not a code change
 - `YOLOVisionEngine` and `YOLOEVisionEngine` share their `scan_frame()` implementation via `_UltralyticsScanMixin` in `vision_engine.py` — only model loading (`YOLO(...)` vs `YOLOE(...)` + `set_classes()`) differs between them, so the two can't drift out of sync
 - `VISION_MODEL_TYPE` env var (`"yolo"` default, or `"yoloe"`) selects which real engine backs `VisionTracker` (used outside the app's own UI, e.g. scripts/tests); **inside `app.py` itself**, a live `st.radio` "Detection engine" selector in the camera panel lets a logged-in user switch between YOLO/YOLOE at runtime for side-by-side comparison, backed by `get_vision_engine(engine_choice)`. `VISION_CUSTOM_CLASSES` (comma-separated) sets which classes `YOLOEVisionEngine` is prompted to detect, defaulting to `DEFAULT_CUSTOM_CLASSES` — see `YOLO_VS_YOLOE_GUIDE.md` for when to use which
-- `get_vision_engine(engine_choice)` is `@st.cache_resource`-wrapped, keyed on the engine name — both YOLO and YOLOE end up cached and resident simultaneously once each has been selected, so switching is instant. Both are also eagerly pre-warmed right after login (before the dashboard renders) so even the *first* selection of either is instant, not just subsequent ones. This trades a slightly slower first render after login for zero-wait switching afterward — confirmed to have comfortable memory headroom on a 4-core/16GB Codespace; an earlier version evicted the previous engine on switch to control memory, but the actual crash that motivated that turned out to be unrelated (see the file-watcher point below) and it was reverted
+- `get_vision_engine(engine_choice)` builds **one vision engine at a time**, cached in `st.session_state` (not `@st.cache_resource`) and evicted (+ `gc.collect()`) on switch — an earlier version held both YOLO and YOLOE resident simultaneously via `@st.cache_resource` for instant switching, but was reverted as a stabilization measure after a still-unresolved SIGSEGV crash during `st.table()` rendering (see next point); switching engines now costs a real reload (a few seconds) instead of being instant
+- The "📋 System Status Log" inventory table renders as **plain HTML** (`st.markdown(..., unsafe_allow_html=True)`) instead of `st.table()`/`st.dataframe()`. Every crash-reproduction attempt for the SIGSEGV above landed inside pyarrow's Arrow serialization at that exact call — never reproduced in isolation — so the table was rewritten to skip pyarrow entirely rather than continue chasing the root cause
+- **Semantic search (Qdrant + CLIP):** `get_vector_store()` builds a `QdrantItemStore` (`app/ml_engine/vector_store.py`) on top of `CLIPEmbeddingEngine` (`app/ml_engine/embedding_engine.py`, wraps `clip-ViT-B-32` via `sentence-transformers`), cached via `@st.cache_resource` and returning `None` if Qdrant/CLIP is unavailable — every call site treats `None` as "search is offline" rather than failing. `register_db_item()` best-effort mirrors every registration into Qdrant: a TEXT point (`item_name` + `description`) always, plus an IMAGE point (via `_detection_crop()`, cropping the frame to the detection's bounding box) only when a photo is available — so the manual sidebar form only ever produces a TEXT point, while a camera detection produces both. Both point types live in one collection (`item_embeddings`, default) and are searched together, unfiltered by modality, which is what lets a typed query match an item registered by photo and vice versa; every query is scoped to `owner_id` so users never see each other's items. Point IDs are deterministic (`uuid5(item_id + ":" + modality)`), so re-registering an item updates its points rather than duplicating them
 - `app/.streamlit/config.toml` sets `fileWatcherType = "none"`, disabling Streamlit's dev-mode hot-reload file watcher. This isn't cosmetic: the watcher was observed (twice, in production logs) throwing an exception while probing `torch.classes.__path__` — a known Streamlit/PyTorch incompatibility — and was the actual cause of a real production bug where the whole Streamlit process would cleanly self-exit mid-session (confirmed via `docker inspect`'s `ExitCode`, once `main.py` was fixed to stop swallowing it — see next point) right after the vision pipeline touched files under the watched `/workspace` mount, manifesting to users as a WebSocket "CONNECTING" state and a browser-side 502. There's no legitimate need for hot-reload in a deployed container other people's browsers connect to, so this is a straightforward net positive, not just a workaround
 - `main.py` (the real container entrypoint) launches Streamlit via `subprocess.Popen` and must call `sys.exit(process.wait())` — **not** just `process.wait()` — to propagate Streamlit's actual exit code/signal. Without this, `main()` falls through and the container always reports a clean `ExitCode=0` to Docker regardless of how Streamlit actually died, making `docker inspect` useless for diagnosing crashes. This was the root blocker in tracking down the file-watcher bug above; keep it this way if `main.py` is ever touched again
 - `docker-compose.yml`'s `app` service must explicitly list `YOLO_MODEL_PATH`/`VISION_MODEL_TYPE`/`VISION_CUSTOM_CLASSES` under `environment:` with `${VAR:-default}` syntax for them to reach the container at all — Compose doesn't auto-forward arbitrary `.env` vars, and omitting the `:-default` fallback would pass an *empty string* (not "unset") when a var is missing from `.env`, silently overriding the Python-side default
@@ -171,6 +181,6 @@ User takes photo → st.camera_input()
 
 1. **Dead commented-out code in `ml_engine.py`** — two earlier `tokenize_text()` implementations (Ollama-native tokenize, embed-based) are commented out above the single active definition (plain `ord()`-based fake tokenization). Harmless but worth deleting rather than leaving commented out next time that file is touched.
 2. **Most of the PostgreSQL schema is unused** — `users`/`user_login`/`user_login_history`/`items` are wired (auth + inventory), but `cameras`, `zones`, `detections`, `reminders`, `alerts`, `query_logs`, `item_embeddings` are schema-only. Detections currently land in `items`, not a dedicated `detections` row with camera/bbox/timestamp — fine for the current single-camera-panel UX, but would need wiring if per-camera/zone tracking becomes a real requirement.
-3. **Qdrant runs but is never called** — `docker-compose.yml` starts a `qdrant` service and `qdrant-client` is in `requirements.txt`, but no application code imports or calls it. `item_embeddings` (the table that would back it) is likewise unwritten.
+3. **`vector_store.py` calls itself a "SKETCH"** (`__version__ = "0.1.0"  # sketch` in its own docstring) despite being wired live into the main registration and search flow — has no unit tests despite `pytest.ini`'s `--cov=ml_engine` nominally covering it, and stores image thumbnails as base64 directly in Qdrant's payload by default (`store_thumbnails=True`), which its own docstring flags as fine for small crops but not a full-resolution-image pattern. Also: `embedding_engine.py`'s unconditional top-level `sentence_transformers` import isn't in `tests/conftest.py`'s Docker-only-deps stub list, so local `pytest` runs can fail on a machine that happens to have `sentence_transformers`/`torch` installed outside Docker.
 
 Design assets (UML diagrams, technical guide) are in `Documents/`.
