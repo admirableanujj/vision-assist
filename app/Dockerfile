@@ -34,6 +34,12 @@ RUN pip install --no-cache-dir \
     chromadb \
     openai
 
+# Pre-install the multimodal embedding stack in the heavy base so it shares the
+# cached torch layer (clip-ViT-B-32 is served via sentence-transformers). The
+# exact version is re-pinned by requirements.txt in the next stage.
+RUN pip install --no-cache-dir \
+    sentence-transformers
+
 # ====================================================================
 # STAGE 2: Active Development Environment & App Layer
 # ====================================================================
@@ -53,6 +59,12 @@ RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, 
 # encoder, and requirements.txt already pins clip/ftfy/wcwidth so this
 # resolves from already-installed packages instead of pip-installing at runtime.
 RUN python -c "import torch; _old_load = torch.load; torch.load = lambda *args, **kwargs: _old_load(*args, **{**kwargs, 'weights_only': False}); from ultralytics import YOLOE; m = YOLOE('yoloe-26n-seg.pt'); m.set_classes(['person'])"
+
+# Pre-download the clip-ViT-B-32 embedding weights into the image cache so the
+# first embedding request at runtime doesn't stall on a model download (mirrors
+# the YOLO pre-download above). Honors EMBEDDING_MODEL_NAME if overridden.
+ENV EMBEDDING_MODEL_NAME=clip-ViT-B-32
+RUN python -c "import os; from sentence_transformers import SentenceTransformer; SentenceTransformer(os.getenv('EMBEDDING_MODEL_NAME', 'clip-ViT-B-32'))"
 
 # Keep container alive/interactive during development
 CMD ["bash"]

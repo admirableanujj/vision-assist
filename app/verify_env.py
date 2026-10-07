@@ -73,6 +73,99 @@ def test_vector_db():
     except Exception as e:
         print(f"❌ Error initializing Vector DB: {e}")
 
+def test_qdrant_db():
+    print_header("Vector Database Backend (Qdrant)")
+    try:
+        from importlib.metadata import version, PackageNotFoundError
+        try:
+            print(f"✔ qdrant-client Version: {version('qdrant-client')}")
+        except PackageNotFoundError:
+            print("✔ qdrant-client is installed (version metadata unavailable).")
+    except ImportError:
+        pass
+
+    try:
+        from qdrant_client import QdrantClient
+        from qdrant_client.models import Distance, VectorParams, PointStruct
+    except ImportError:
+        print("❌ qdrant-client is missing! (pip install qdrant-client)")
+        return
+
+    # --- Core client sanity check: full upsert → search round trip in local
+    # in-memory mode, so this passes with no live server required. Vector size
+    # matches the clip-ViT-B-32 embedding dimension.
+    EMBED_DIM = 512
+    try:
+        client = QdrantClient(location=":memory:")
+        client.create_collection(
+            collection_name="verify_probe",
+            vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
+        )
+        client.upsert(
+            collection_name="verify_probe",
+            points=[
+                PointStruct(id=1, vector=[0.1] * EMBED_DIM, payload={"label": "keys"}),
+                PointStruct(id=2, vector=[0.2] * EMBED_DIM, payload={"label": "wallet"}),
+            ],
+        )
+        # query_points is the modern API (qdrant-client >= 1.10); fall back to the
+        # deprecated .search() so this stays correct on older client pins.
+        try:
+            hits = client.query_points(
+                collection_name="verify_probe", query=[0.1] * EMBED_DIM, limit=1
+            ).points
+        except AttributeError:
+            hits = client.search(
+                collection_name="verify_probe", query_vector=[0.1] * EMBED_DIM, limit=1
+            )
+        assert hits, "search returned no hits"
+        print(
+            "✔ In-memory client OK — collection + upsert + cosine search round trip "
+            f"working (top hit id={hits[0].id}, score={hits[0].score:.3f})."
+        )
+    except Exception as e:
+        print(f"❌ Error exercising in-memory Qdrant client: {e}")
+        return
+
+    # --- Optional live-server probe: only when a running Qdrant is reachable
+    # (e.g. inside docker-compose, service host "qdrant"). Never fails the check
+    # when standalone — the in-memory round trip above is the real gate.
+    host = os.getenv("QDRANT_HOST", "qdrant")
+    port = os.getenv("QDRANT_PORT", "6333")
+    url = os.getenv("QDRANT_URL", f"http://{host}:{port}")
+    api_key = os.getenv("QDRANT_API_KEY") or os.getenv("QDRANT__SERVICE__API_KEY")
+    try:
+        live = QdrantClient(url=url, api_key=api_key, timeout=2.0)
+        collections = live.get_collections().collections
+        print(f"✔ Live Qdrant server reachable at {url} ({len(collections)} collection(s)).")
+    except Exception:
+        print(f"ℹ No live Qdrant server at {url} (expected outside docker-compose).")
+
+def test_embeddings():
+    print_header("Multimodal Embeddings (CLIP / sentence-transformers)")
+    try:
+        import sentence_transformers
+        print(f"✔ sentence-transformers Version: {sentence_transformers.__version__}")
+    except ImportError:
+        print("❌ sentence-transformers is missing!")
+        return
+
+    try:
+        import os
+        from sentence_transformers import SentenceTransformer
+
+        model_name = os.getenv("EMBEDDING_MODEL_NAME", "clip-ViT-B-32")
+        print(f"🔄 Loading pre-cached embedding model '{model_name}'...")
+        model = SentenceTransformer(model_name)
+        dim = model.get_sentence_embedding_dimension()
+        print(f"✔ Model loaded successfully! (embedding dim: {dim})")
+
+        print("🔄 Encoding a sanity text sample...")
+        vec = model.encode("a black leather wallet", normalize_embeddings=True)
+        print(f"✔ Text embedding produced (length {len(vec)}). CLIP encoder operational.")
+    except Exception as e:
+        print(f"❌ Error during embedding model test: {e}")
+
 if __name__ == "__main__":
     print("==================================================")
     print("🚀 VISION ASSIST ENVIRONMENT VERIFICATION SCRIPT 🚀")
@@ -82,7 +175,9 @@ if __name__ == "__main__":
     test_pytorch()
     test_computer_vision()
     test_vector_db()
-    
+    test_qdrant_db()
+    test_embeddings()
+
     print("\n==================================================")
     print("🏁 Diagnostics Complete!")
     print("==================================================\n")

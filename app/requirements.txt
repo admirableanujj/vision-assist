@@ -34,6 +34,12 @@ ollama==0.6.2
 # 🔎 Vector Database Client
 qdrant-client==1.11.0
 
+# 🧬 Multimodal Embeddings (CLIP text + image encoder)
+# Provides the `clip-ViT-B-32` model used by ml_engine/embedding_engine.py to
+# encode item names/descriptions and object crops into a shared 512-d vector
+# space (text↔image similarity for the Lost & Found matching use case).
+sentence-transformers==3.1.1
+
 # 🎙️ Local Speech Processing Core
 faster-whisper==1.0.3
 gTTS==2.5.1  
